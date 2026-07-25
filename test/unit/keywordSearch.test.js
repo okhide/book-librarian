@@ -105,6 +105,28 @@ test('levelで絞り込める', () => {
   db.close();
 });
 
+test('unreadOnlyで絞り込むと、既読・読書中の本が除外される', () => {
+  const db = makeDb();
+  const normalBook = getBookByFilePath(db, 'normal_book.md');
+  db.prepare(
+    "INSERT INTO reading_status (file_path, status, updated_at) VALUES (?, 'finished', '2026-01-01')"
+  ).run(normalBook.file_path);
+
+  const unreadResult = searchByKeyword(db, '会計', { unreadOnly: true });
+  assert.ok(unreadResult.results.every((r) => r.book.id !== normalBook.id));
+
+  const allResult = searchByKeyword(db, '会計');
+  assert.ok(allResult.results.some((r) => r.book.id === normalBook.id));
+  db.close();
+});
+
+test('unreadOnlyで絞り込んでも、reading_statusが未記録の本(未読扱い)は含まれる', () => {
+  const db = makeDb();
+  const { results } = searchByKeyword(db, '会計', { unreadOnly: true });
+  assert.ok(results.length >= 1); // reading_status未記録なので未読として含まれる
+  db.close();
+});
+
 test('categoryで絞り込める', () => {
   const db = makeDb();
   const matched = searchByKeyword(db, '会計', { category: '実用書' });

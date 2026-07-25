@@ -60,11 +60,11 @@ function scoreBook(book, keywords, topics, queryLower) {
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string} queryText
- * @param {{limit?: number, includeStatuses?: string[], year?: number, category?: string, topic?: string, level?: string}} [options]
+ * @param {{limit?: number, includeStatuses?: string[], year?: number, category?: string, topic?: string, level?: string, unreadOnly?: boolean}} [options]
  * @returns {{totalCount: number, results: Array<{book: object, score: number}>}}
  */
 export function searchByKeyword(db, queryText, options = {}) {
-  const { limit = 50, includeStatuses = ['summarized'], year, category, topic, level } = options;
+  const { limit = 50, includeStatuses = ['summarized'], year, category, topic, level, unreadOnly } = options;
   const queryLower = queryText.toLowerCase();
   const placeholders = includeStatuses.map(() => '?').join(',');
 
@@ -85,6 +85,10 @@ export function searchByKeyword(db, queryText, options = {}) {
   if (topic != null) {
     conditions.push('id IN (SELECT book_id FROM book_topics WHERE topic = ?)');
     params.push(topic);
+  }
+  if (unreadOnly) {
+    // 未読 = reading_statusが無い、またはstatus='unread'（既読・読書中・中断は除外）
+    conditions.push(`file_path NOT IN (SELECT file_path FROM reading_status WHERE status != 'unread')`);
   }
 
   const rows = db.prepare(`SELECT * FROM books WHERE ${conditions.join(' AND ')}`).all(...params);

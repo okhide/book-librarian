@@ -73,3 +73,28 @@ export function getFilePathForBookId(db, bookId) {
   const row = db.prepare('SELECT file_path FROM books WHERE id = ?').get(bookId);
   return row?.file_path ?? null;
 }
+
+/**
+ * 未読のまま長期間放置されている本（死蔵本）を抽出する。
+ *
+ * 注意: 「いつから未読か」を直接示すデータ（蔵書の取得日）は無いため、
+ * `summarized_at`（元データが要約された日）を「その本が蔵書に加わった時期」の
+ * 代理指標として使う。実際の取得日とは異なる可能性がある近似値である。
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {{limit?: number}} [options]
+ * @returns {Array} summarized_atが古い順（＝蔵書に長くある順）の未読本一覧
+ */
+export function findDormantBooks(db, options = {}) {
+  const { limit = 20 } = options;
+  return db
+    .prepare(
+      `SELECT b.id, b.title, b.author, b.summarized_at FROM books b
+       WHERE b.status = 'summarized'
+         AND b.file_path NOT IN (SELECT file_path FROM reading_status WHERE status != 'unread')
+         AND b.summarized_at IS NOT NULL
+       ORDER BY b.summarized_at ASC
+       LIMIT ?`
+    )
+    .all(limit);
+}

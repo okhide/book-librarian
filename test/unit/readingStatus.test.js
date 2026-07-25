@@ -7,6 +7,7 @@ import {
   setReadingStatus,
   listReadingStatus,
   getFilePathForBookId,
+  findDormantBooks,
 } from '../../src/lib/readingStatus.js';
 
 function makeDb() {
@@ -82,4 +83,37 @@ test('getFilePathForBookId: summarized本はfile_pathを返し、無ければnul
   assert.equal(getFilePathForBookId(db, id), 'a.md');
   assert.equal(getFilePathForBookId(db, 999999), null);
   db.close();
+});
+
+test('findDormantBooks: 未読本のみを要約日が古い順に返す（既読・読書中は除外）', () => {
+  const db = makeDb();
+  const insertBook = (filePath, title, summarizedAt) =>
+    db
+      .prepare(
+        "INSERT INTO books (file_path, status, title, title_is_fallback, summarized_at, updated_at) VALUES (?, 'summarized', ?, 0, ?, '2026-01-01')"
+      )
+      .run(filePath, title, summarizedAt);
+
+  insertBook('old.md', '古い未読本', '2026-01-01');
+  insertBook('new.md', '新しい未読本', '2026-06-01');
+  insertBook('finished.md', '読了済みの本（古いが除外される）', '2025-01-01');
+  setReadingStatus(db, 'finished.md', { status: 'finished' });
+
+  const dormant = findDormantBooks(db, { limit: 10 });
+  assert.deepEqual(
+    dormant.map((r) => r.title),
+    ['古い未読本', '新しい未読本']
+  );
+  db.close();
+});
+
+test('findDormantBooks: limitで件数を制限できる', () => {
+  const db = makeDb();
+  for (let i = 0; i < 5; i++) {
+    db.prepare(
+      "INSERT INTO books (file_path, status, title, title_is_fallback, summarized_at, updated_at) VALUES (?, 'summarized', ?, 0, ?, '2026-01-01')"
+    ).run(`b${i}.md`, `本${i}`, `2026-01-0${i + 1}`);
+  }
+  const dormant = findDormantBooks(db, { limit: 2 });
+  assert.equal(dormant.length, 2);
 });

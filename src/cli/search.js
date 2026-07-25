@@ -2,7 +2,7 @@
 // 使い方:
 //   node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C]
 //                           [--topic T] [--level L] [--vector-threshold T]
-//                           [--with-summary] [--json] [--data-issues]
+//                           [--unread] [--with-summary] [--json] [--data-issues]
 //
 // --with-summary: 複数冊の要約summary_shortをまとめて取得するモード。
 //   件数上限を200件に引き上げ、文字数が上限(既定40,000字)を超えないよう
@@ -30,6 +30,7 @@ function parseArgs(argv) {
     else if (a === '--category') args.category = argv[++i];
     else if (a === '--topic') args.topic = argv[++i];
     else if (a === '--level') args.level = argv[++i];
+    else if (a === '--unread') args.unreadOnly = true;
     else if (a === '--vector-threshold') args.vectorHitThreshold = Number(argv[++i]);
     else rest.push(a);
   }
@@ -114,7 +115,7 @@ async function main() {
 
   if (!args.query) {
     console.error(
-      '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--topic T] [--level L] [--vector-threshold T] [--json] [--data-issues]'
+      '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--topic T] [--level L] [--unread] [--vector-threshold T] [--json] [--data-issues]'
     );
     process.exitCode = 1;
     db.close();
@@ -128,6 +129,7 @@ async function main() {
     category: args.category,
     topic: args.topic,
     level: args.level,
+    unreadOnly: args.unreadOnly,
     vectorHitThreshold: args.vectorHitThreshold,
   });
 

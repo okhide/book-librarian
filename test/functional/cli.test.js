@@ -94,6 +94,22 @@ test('CLI', async (t) => {
     assert.equal(parsed.totalCount, 0);
   });
 
+  await t.test('search --unread: 読了済みにした本が除外される', () => {
+    runCli('src/cli/read.js', [String(normalBookId), '--status', 'finished'], dbPath);
+    const output = runCli('src/cli/search.js', ['会計', '--unread', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(parsed.results.every((r) => r.id !== normalBookId));
+    // 元に戻す（他のテストに影響しないように）
+    runCli('src/cli/read.js', [String(normalBookId), '--status', 'unread'], dbPath);
+  });
+
+  await t.test('read --dormant: 未読本が要約日順に一覧できる', () => {
+    const output = runCli('src/cli/read.js', ['--dormant', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(Array.isArray(parsed));
+    assert.ok(parsed.some((r) => r.id === normalBookId));
+  });
+
   await t.test('topics: トピック一覧が件数付きで返る', () => {
     const output = runCli('src/cli/topics.js', ['--json'], dbPath);
     const parsed = JSON.parse(output);

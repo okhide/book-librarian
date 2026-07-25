@@ -16,11 +16,11 @@ function dot(a, b) {
  * （doc/03_specification.md「削除されたファイルの扱い」参照）ため、既定では
  * booksテーブルと結合してstatus='summarized'のみに絞る。
  * @param {import('better-sqlite3').Database} db
- * @param {{includeStatuses?: string[], year?: number, category?: string, topic?: string, level?: string}} [options]
+ * @param {{includeStatuses?: string[], year?: number, category?: string, topic?: string, level?: string, unreadOnly?: boolean}} [options]
  * @returns {Array<{bookId: number, vector: Float32Array}>}
  */
 export function loadAllEmbeddings(db, options = {}) {
-  const { includeStatuses = ['summarized'], year, category, topic, level } = options;
+  const { includeStatuses = ['summarized'], year, category, topic, level, unreadOnly } = options;
   const placeholders = includeStatuses.map(() => '?').join(',');
   const conditions = [`b.status IN (${placeholders})`];
   const params = [...includeStatuses];
@@ -39,6 +39,9 @@ export function loadAllEmbeddings(db, options = {}) {
   if (topic != null) {
     conditions.push('b.id IN (SELECT book_id FROM book_topics WHERE topic = ?)');
     params.push(topic);
+  }
+  if (unreadOnly) {
+    conditions.push(`b.file_path NOT IN (SELECT file_path FROM reading_status WHERE status != 'unread')`);
   }
 
   return db
