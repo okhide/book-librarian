@@ -110,6 +110,26 @@ test('CLI', async (t) => {
     assert.ok(parsed.results.every((r) => typeof r.summaryShort === 'string' && r.summaryShort.length > 0));
   });
 
+  await t.test('read: 状態を記録して読み戻せる', () => {
+    runCli('src/cli/read.js', [String(normalBookId), '--status', 'finished', '--rating', '5', '--note', '良かった'], dbPath);
+    const output = runCli('src/cli/read.js', [String(normalBookId), '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.status, 'finished');
+    assert.equal(parsed.rating, 5);
+    assert.equal(parsed.note, '良かった');
+    assert.ok(parsed.finished_at != null);
+  });
+
+  await t.test('read --list: 記録した本が一覧に出る', () => {
+    const output = runCli('src/cli/read.js', ['--list', '--status', 'finished', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(parsed.some((r) => r.book_id === normalBookId));
+  });
+
+  await t.test('read: file_pathが無い本(pending)はエラーになる', () => {
+    assert.throws(() => runCli('src/cli/read.js', ['999999', '--status', 'unread'], dbPath));
+  });
+
   await t.test('stats: 統計一式がJSONで返る', () => {
     const output = runCli('src/cli/stats.js', ['--json'], dbPath);
     const parsed = JSON.parse(output);
