@@ -169,6 +169,49 @@ export function getTopicsForBook(db, bookId) {
     .map((r) => r.topic);
 }
 
+/**
+ * 1冊のtopicsを適用する（Step 3.4）。title/author/summary等には触れず、
+ * book_topics・search_text・embed_source_hash・topic_dict_versionだけを更新する。
+ * embed_source_hashが変わった場合は既存の埋め込みを削除し、Phase 2の
+ * generateMissingEmbeddingsが再生成できるようにする。
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} bookId
+ * @param {string[]} topics
+ * @param {string} dictVersion 辞書（taxonomy+mapping+overrides）のバージョンハッシュ
+ */
+export function applyTopicsForBook(db, bookId, topics, dictVersion) {
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId);
+  const keywords = getKeywordsForBook(db, bookId);
+
+  const searchText = buildSearchText({
+    title: book.title,
+    author: book.author,
+    keywords,
+    topics,
+    summaryLong: book.summary_long,
+    summaryShort: book.summary_short,
+  });
+  const embedSourceText = buildEmbedSourceText({
+    title: book.title,
+    author: book.author,
+    keywords,
+    topics,
+    summaryLong: book.summary_long,
+  });
+  const embedSourceHash = sha256(embedSourceText);
+
+  const run = db.transaction(() => {
+    deleteEmbeddingIfSourceChanged(db, bookId, embedSourceHash);
+    db.prepare('DELETE FROM book_topics WHERE book_id = ?').run(bookId);
+    const insertTopic = db.prepare('INSERT INTO book_topics (book_id, topic) VALUES (?, ?)');
+    for (const topic of topics) insertTopic.run(bookId, topic);
+    db.prepare(
+      'UPDATE books SET search_text = ?, embed_source_hash = ?, topic_dict_version = ?, updated_at = ? WHERE id = ?'
+    ).run(searchText, embedSourceHash, dictVersion, new Date().toISOString(), bookId);
+  });
+  run();
+}
+
 /** status='pending'の本の中から、csv_filenameがmdFilenameに対応するものを探す。 */
 export function findPendingBookByMdFilename(db, mdFilename) {
   const pendingBooks = db

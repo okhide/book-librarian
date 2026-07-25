@@ -13,10 +13,14 @@ import { parseCatalogCsv } from './csv.js';
 import { reconcileCatalog } from './reconcileCsv.js';
 import { createEmbedder } from '../lib/embed.js';
 import { generateMissingEmbeddings } from './embedBuild.js';
+import { applyTopicsToAllBooks } from './applyTopics.js';
 
 const DB_PATH = path.resolve('data/db/library.db');
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
 const CSV_PATH = path.resolve('data/蔵書リスト.csv');
+const TAXONOMY_PATH = path.resolve('data/topic_taxonomy.json');
+const MAPPING_PATH = path.resolve('data/topic_mapping.json');
+const OVERRIDES_PATH = path.resolve('data/topic_overrides.json');
 const forceFullRebuild = process.argv.includes('--full');
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -53,6 +57,18 @@ if (forceFullRebuild || existingCount === 0) {
   console.log(
     `蔵書リスト.csv突き合わせ: 既存本への記録=${reconcileSummary.matched} 新規pending追加=${reconcileSummary.pendingInserted}`
   );
+}
+
+if (fs.existsSync(TAXONOMY_PATH) && fs.existsSync(MAPPING_PATH)) {
+  const taxonomy = JSON.parse(fs.readFileSync(TAXONOMY_PATH, 'utf8'));
+  const mapping = JSON.parse(fs.readFileSync(MAPPING_PATH, 'utf8'));
+  const overrides = fs.existsSync(OVERRIDES_PATH) ? JSON.parse(fs.readFileSync(OVERRIDES_PATH, 'utf8')) : {};
+  const topicsSummary = applyTopicsToAllBooks(db, { taxonomy, mapping, overrides });
+  console.log(
+    `topics適用: 辞書バージョン=${topicsSummary.dictVersion.slice(0, 12)}... 再適用対象=${topicsSummary.totalCandidates}件`
+  );
+} else {
+  console.log('topic_taxonomy.json / topic_mapping.json が無いためtopics適用をスキップします');
 }
 
 console.log('埋め込みモデルをロード中...');

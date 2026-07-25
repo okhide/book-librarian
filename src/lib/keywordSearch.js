@@ -81,12 +81,31 @@ export function searchByKeyword(db, queryText, options = {}) {
 
   const rows = db.prepare(`SELECT * FROM books WHERE ${conditions.join(' AND ')}`).all(...params);
 
-  const getKeywords = db.prepare('SELECT keyword FROM book_keywords WHERE book_id = ?');
-  const getTopics = db.prepare('SELECT topic FROM book_topics WHERE book_id = ?');
+  // ヒット件数が多いとbook単位のサブクエリがN+1になり遅くなるため、
+  // マッチした本のkeywords/topicsを1回のIN句でまとめて取得する
+  // （実データで"会計"検索が34件→160件に増えた際に実測で問題化したため修正）。
+  const bookIds = rows.map((r) => r.id);
+  const keywordsByBook = new Map();
+  const topicsByBook = new Map();
+  if (bookIds.length > 0) {
+    const idPlaceholders = bookIds.map(() => '?').join(',');
+    for (const r of db
+      .prepare(`SELECT book_id, keyword FROM book_keywords WHERE book_id IN (${idPlaceholders})`)
+      .all(...bookIds)) {
+      if (!keywordsByBook.has(r.book_id)) keywordsByBook.set(r.book_id, []);
+      keywordsByBook.get(r.book_id).push(r.keyword);
+    }
+    for (const r of db
+      .prepare(`SELECT book_id, topic FROM book_topics WHERE book_id IN (${idPlaceholders})`)
+      .all(...bookIds)) {
+      if (!topicsByBook.has(r.book_id)) topicsByBook.set(r.book_id, []);
+      topicsByBook.get(r.book_id).push(r.topic);
+    }
+  }
 
   const scored = rows.map((book) => {
-    const keywords = getKeywords.all(book.id).map((r) => r.keyword);
-    const topics = getTopics.all(book.id).map((r) => r.topic);
+    const keywords = keywordsByBook.get(book.id) ?? [];
+    const topics = topicsByBook.get(book.id) ?? [];
     return { book, score: scoreBook(book, keywords, topics, queryLower) };
   });
 
