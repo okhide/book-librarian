@@ -2,6 +2,9 @@ node_modules/
 *.db
 *.db-journal
 
+# APIキー等の秘密情報
+.env
+
 # data/output_data と 蔵書リスト.csv は元プロジェクトへのジャンクション/ハードリンク（読み取り専用）
 data/output_data/
 data/蔵書リスト.csv
