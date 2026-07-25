@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // 使い方:
 //   node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C]
-//                           [--vector-threshold T] [--json] [--data-issues]
+//                           [--topic T] [--level L] [--vector-threshold T]
+//                           [--json] [--data-issues]
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
 import { createEmbedder } from '../lib/embed.js';
@@ -17,6 +18,8 @@ function parseArgs(argv) {
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a === '--year') args.year = Number(argv[++i]);
     else if (a === '--category') args.category = argv[++i];
+    else if (a === '--topic') args.topic = argv[++i];
+    else if (a === '--level') args.level = argv[++i];
     else if (a === '--vector-threshold') args.vectorHitThreshold = Number(argv[++i]);
     else rest.push(a);
   }
@@ -85,7 +88,7 @@ async function main() {
 
   if (!args.query) {
     console.error(
-      '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--vector-threshold T] [--json] [--data-issues]'
+      '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--topic T] [--level L] [--vector-threshold T] [--json] [--data-issues]'
     );
     process.exitCode = 1;
     db.close();
@@ -97,6 +100,8 @@ async function main() {
     limit: args.limit,
     year: args.year,
     category: args.category,
+    topic: args.topic,
+    level: args.level,
     vectorHitThreshold: args.vectorHitThreshold,
   });
 

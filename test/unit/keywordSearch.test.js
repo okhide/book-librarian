@@ -79,6 +79,32 @@ test('yearで絞り込める', () => {
   db.close();
 });
 
+test('topicで絞り込める', () => {
+  const db = makeDb();
+  const normalBook = getBookByFilePath(db, 'normal_book.md');
+  db.prepare('INSERT INTO book_topics (book_id, topic) VALUES (?, ?)').run(normalBook.id, '会計・財務');
+
+  const matched = searchByKeyword(db, '会計', { topic: '会計・財務' });
+  assert.ok(matched.results.some((r) => r.book.id === normalBook.id));
+
+  const unmatched = searchByKeyword(db, '会計', { topic: '存在しないトピック' });
+  assert.equal(unmatched.results.length, 0);
+  db.close();
+});
+
+test('levelで絞り込める', () => {
+  const db = makeDb();
+  const normalBook = getBookByFilePath(db, 'normal_book.md');
+  db.prepare("UPDATE books SET reader_level = 'beginner' WHERE id = ?").run(normalBook.id);
+
+  const matched = searchByKeyword(db, '会計', { level: 'beginner' });
+  assert.ok(matched.results.some((r) => r.book.id === normalBook.id));
+
+  const unmatched = searchByKeyword(db, '会計', { level: 'advanced' });
+  assert.equal(unmatched.results.length, 0);
+  db.close();
+});
+
 test('categoryで絞り込める', () => {
   const db = makeDb();
   const matched = searchByKeyword(db, '会計', { category: '実用書' });

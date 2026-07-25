@@ -60,11 +60,11 @@ function scoreBook(book, keywords, topics, queryLower) {
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string} queryText
- * @param {{limit?: number, includeStatuses?: string[], year?: number, category?: string}} [options]
+ * @param {{limit?: number, includeStatuses?: string[], year?: number, category?: string, topic?: string, level?: string}} [options]
  * @returns {{totalCount: number, results: Array<{book: object, score: number}>}}
  */
 export function searchByKeyword(db, queryText, options = {}) {
-  const { limit = 50, includeStatuses = ['summarized'], year, category } = options;
+  const { limit = 50, includeStatuses = ['summarized'], year, category, topic, level } = options;
   const queryLower = queryText.toLowerCase();
   const placeholders = includeStatuses.map(() => '?').join(',');
 
@@ -77,6 +77,14 @@ export function searchByKeyword(db, queryText, options = {}) {
   if (category != null) {
     conditions.push('category_raw = ?');
     params.push(category);
+  }
+  if (level != null) {
+    conditions.push('reader_level = ?');
+    params.push(level);
+  }
+  if (topic != null) {
+    conditions.push('id IN (SELECT book_id FROM book_topics WHERE topic = ?)');
+    params.push(topic);
   }
 
   const rows = db.prepare(`SELECT * FROM books WHERE ${conditions.join(' AND ')}`).all(...params);

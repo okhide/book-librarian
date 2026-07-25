@@ -22,6 +22,8 @@ async function buildTempDb(extractor) {
   runFullBuild(db, FIXTURES_OUTPUT_DATA);
   await generateMissingEmbeddings(db, extractor);
   const normalBookId = getBookByFilePath(db, 'normal_book.md').id;
+  db.prepare("INSERT INTO book_topics (book_id, topic) VALUES (?, '会計・財務')").run(normalBookId);
+  db.prepare("UPDATE books SET reader_level = 'beginner' WHERE id = ?").run(normalBookId);
   db.close(); // 子プロセスから開けるようファイルロックを解放する
   return { dbPath, normalBookId };
 }
@@ -78,6 +80,32 @@ test('CLI', async (t) => {
     const output = runCli('src/cli/similar.js', [String(normalBookId), '--json'], dbPath);
     const parsed = JSON.parse(output);
     assert.ok(parsed.every((r) => r.id !== normalBookId));
+  });
+
+  await t.test('search --topic: トピックで絞り込める', () => {
+    const output = runCli('src/cli/search.js', ['会計', '--topic', '会計・財務', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(parsed.results.some((r) => r.id === normalBookId));
+  });
+
+  await t.test('search --level: 存在しないレベルで絞り込むと0件になる', () => {
+    const output = runCli('src/cli/search.js', ['会計', '--level', 'advanced', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.totalCount, 0);
+  });
+
+  await t.test('topics: トピック一覧が件数付きで返る', () => {
+    const output = runCli('src/cli/topics.js', ['--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(parsed.some((t) => t.topic === '会計・財務' && t.count === 1));
+  });
+
+  await t.test('stats: 統計一式がJSONで返る', () => {
+    const output = runCli('src/cli/stats.js', ['--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok(parsed.statusCounts.some((r) => r.status === 'summarized'));
+    assert.ok(parsed.topicCounts.some((r) => r.topic === '会計・財務'));
+    assert.equal(parsed.dataIssuesCount, 2);
   });
 
   t.after(() => {

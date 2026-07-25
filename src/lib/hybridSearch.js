@@ -20,7 +20,7 @@ const VECTOR_CANDIDATE_POOL = 50; // 表示用ランキングの候補に加え�
  * @param {import('better-sqlite3').Database} db
  * @param {import('@huggingface/transformers').FeatureExtractionPipeline} extractor
  * @param {string} queryText
- * @param {{limit?: number, includeStatuses?: string[], vectorHitThreshold?: number, year?: number, category?: string}} [options]
+ * @param {{limit?: number, includeStatuses?: string[], vectorHitThreshold?: number, year?: number, category?: string, topic?: string, level?: string}} [options]
  * @returns {Promise<{totalCount: number, results: Array<{book: object, keywordScore: number, vectorScore: number, matchedByKeyword: boolean, combinedScore: number}>}>}
  */
 export async function hybridSearch(db, extractor, queryText, options = {}) {
@@ -30,13 +30,15 @@ export async function hybridSearch(db, extractor, queryText, options = {}) {
     vectorHitThreshold = DEFAULT_VECTOR_HIT_THRESHOLD,
     year,
     category,
+    topic,
+    level,
   } = options;
 
-  const keywordAll = searchByKeyword(db, queryText, { limit: Infinity, includeStatuses, year, category });
+  const keywordAll = searchByKeyword(db, queryText, { limit: Infinity, includeStatuses, year, category, topic, level });
   const keywordScoreById = new Map(keywordAll.results.map((r) => [r.book.id, r.score]));
 
   const queryVector = await embedText(extractor, toQueryText(queryText));
-  const embeddings = loadAllEmbeddings(db, { includeStatuses, year, category });
+  const embeddings = loadAllEmbeddings(db, { includeStatuses, year, category, topic, level });
   const vectorRanked = topNBySimilarity(queryVector, embeddings, embeddings.length);
   const vectorScoreById = new Map(vectorRanked.map((r) => [r.bookId, r.score]));
 
