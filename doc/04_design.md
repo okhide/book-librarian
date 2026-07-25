@@ -5,7 +5,7 @@
 - ランタイム: Node.js
 - DB: SQLite（`better-sqlite3`）。**拡張（FTS5仮想テーブル・sqlite-vec）は使わない。**
 - キーワード検索: SQLの `LIKE` によるビルド時合成列（`search_text`）への部分一致
-- 意味検索: ローカル埋め込みモデル（`transformers.js` + `multilingual-e5-small` 等）でベクトル化し、BLOBで保存してJSで総当たりコサイン類似度
+- 意味検索: ローカル埋め込みモデル（`@huggingface/transformers` + `Xenova/multilingual-e5-small`、384次元）でベクトル化し、BLOBで保存してJSで総当たりコサイン類似度
 - 正規化メタデータ抽出用LLM: Gemini API（無料ティア）。ビルド時のみ使用。呼び出しはルールベースで判定できない箇所に限定し、数百回程度に抑える
 - インターフェース: まずCLI（司書AIがBashツール経由で直接コマンド実行する）。将来的に必要ならMCPサーバー化を検討する。そのため検索ロジックはCLIから独立した共有ライブラリ（`src/lib`）として実装し、CLI／将来のMCPサーバーの両方から呼び出せるようにする。
 
