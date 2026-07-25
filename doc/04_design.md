@@ -59,7 +59,11 @@
       notebooklm/          # NotebookLM橋渡しアダプタ
       obsidian/            # （将来）
       anki/                # （将来）
-    librarian/             # 司書AIのペルソナ定義・プロンプト・スキル定義
+    librarian/             # 司書AIのペルソナ定義・プロンプト・スキル定義（正本）
+                           # .claude/skills/book-librarian/SKILL.md に同一内容のコピーを
+                           # 置く必要がある（Claude Codeが実際にスキルとして発見・起動する
+                           # のはこちらのパスのため）。test/unit/skillDoc.test.js で
+                           # 両者の一致を検証している
   doc/
     01_requirements.md
     02_use_cases.md
