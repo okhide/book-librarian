@@ -8,6 +8,7 @@ import {
   listReadingStatus,
   getFilePathForBookId,
   findDormantBooks,
+  findOrphanedReadingStatus,
 } from '../../src/lib/readingStatus.js';
 
 function makeDb() {
@@ -116,4 +117,36 @@ test('findDormantBooks: limitで件数を制限できる', () => {
   }
   const dormant = findDormantBooks(db, { limit: 2 });
   assert.equal(dormant.length, 2);
+});
+
+test('findOrphanedReadingStatus: 対応するbooks行が無ければ検知される', () => {
+  const db = makeDb();
+  setReadingStatus(db, '存在しない.md', { status: 'unread' });
+  const orphaned = findOrphanedReadingStatus(db);
+  assert.equal(orphaned.length, 1);
+  assert.equal(orphaned[0].file_path, '存在しない.md');
+  db.close();
+});
+
+test('findOrphanedReadingStatus: 対応するbooks行がstatus=deletedのときも検知される', () => {
+  const db = makeDb();
+  db.prepare(
+    "INSERT INTO books (file_path, status, title, title_is_fallback, updated_at) VALUES ('a.md', 'deleted', 'A', 0, '2026-01-01')"
+  ).run();
+  setReadingStatus(db, 'a.md', { status: 'finished', rating: 4 });
+
+  const orphaned = findOrphanedReadingStatus(db);
+  assert.equal(orphaned.length, 1);
+  assert.equal(orphaned[0].rating, 4); // データ自体は保持されている
+  db.close();
+});
+
+test('findOrphanedReadingStatus: 対応するbooks行がsummarizedなら検知されない', () => {
+  const db = makeDb();
+  db.prepare(
+    "INSERT INTO books (file_path, status, title, title_is_fallback, updated_at) VALUES ('a.md', 'summarized', 'A', 0, '2026-01-01')"
+  ).run();
+  setReadingStatus(db, 'a.md', { status: 'unread' });
+  assert.deepEqual(findOrphanedReadingStatus(db), []);
+  db.close();
 });

@@ -75,6 +75,31 @@ export function getFilePathForBookId(db, bookId) {
 }
 
 /**
+ * reading_statusのうち、有効な(status != 'deleted')books行が対応していないものを検知する。
+ * ファイル名変更等でbooksとreading_statusの対応が切れた場合に警告するために使う
+ * （doc/03_specification.md「ファイル名が変更された本は…対応の切れたreading_status行を
+ * 更新コマンドのサマリで警告表示する」参照）。
+ *
+ * 注意: 論理削除の設計上、ファイル名変更は「旧file_pathの本がstatus='deleted'になり、
+ * 新file_pathの本が新規追加される」という形で観測される（booksから物理的に消えるわけ
+ * ではない）。そのため単純な「booksに存在しない」判定では検知できず、
+ * 「対応するbooks行がstatus='deleted'、または一切存在しない」を条件にする。
+ * データは削除しない（検知して警告するだけ）。
+ * @param {import('better-sqlite3').Database} db
+ * @returns {Array} 対応が切れたreading_status行
+ */
+export function findOrphanedReadingStatus(db) {
+  return db
+    .prepare(
+      `SELECT rs.* FROM reading_status rs
+       WHERE NOT EXISTS (
+         SELECT 1 FROM books b WHERE b.file_path = rs.file_path AND b.status != 'deleted'
+       )`
+    )
+    .all();
+}
+
+/**
  * 未読のまま長期間放置されている本（死蔵本）を抽出する。
  *
  * 注意: 「いつから未読か」を直接示すデータ（蔵書の取得日）は無いため、

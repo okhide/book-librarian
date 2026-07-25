@@ -15,6 +15,7 @@ import { createEmbedder } from '../lib/embed.js';
 import { generateMissingEmbeddings } from './embedBuild.js';
 import { applyTopicsToAllBooks } from './applyTopics.js';
 import { applyReaderLevelRules } from './readerLevel.js';
+import { findOrphanedReadingStatus } from '../lib/readingStatus.js';
 
 const DB_PATH = path.resolve('data/db/library.db');
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
@@ -77,6 +78,17 @@ console.log(
   `reader_levelルール判定: 対象=${levelSummary.checked}件 更新=${levelSummary.updated}件 (beginner=${levelSummary.beginnerCount} advanced=${levelSummary.advancedCount})`
 );
 
+const unclassifiedCount = db
+  .prepare("SELECT COUNT(*) as n FROM books WHERE status = 'summarized' AND reader_level IS NULL")
+  .get().n;
+if (unclassifiedCount > 0) {
+  console.log(
+    `\n⚠ reader_level未判定の本が${unclassifiedCount}件あります。` +
+      `node src/build/runReaderLevelLlm.js を実行してLLM補完してください` +
+      `（フルリビルド直後は正常な状態です。ルールで判定できない本の分だけ発生します）。`
+  );
+}
+
 console.log('埋め込みモデルをロード中...');
 const embedStart = Date.now();
 const extractor = await createEmbedder();
@@ -87,5 +99,14 @@ const { generated, total } = await generateMissingEmbeddings(db, extractor);
 console.log(
   `埋め込み生成: ${generated}/${total}件 (${Date.now() - embedGenStart}ms)`
 );
+
+const orphaned = findOrphanedReadingStatus(db);
+if (orphaned.length > 0) {
+  console.log(
+    `\n⚠ 警告: reading_statusのうち${orphaned.length}件が、対応するbooks行を見つけられません` +
+      `（ファイル名変更等の可能性）。データは削除していません。対象のfile_path:`
+  );
+  for (const r of orphaned) console.log(`  - ${r.file_path} (status=${r.status})`);
+}
 
 db.close();
