@@ -1,0 +1,17 @@
+{
+  "name": "book-librarian",
+  "version": "0.1.0",
+  "description": "蔵書要約データベース化＋司書AIツール",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test \"test/unit/**/*.test.js\" \"test/functional/**/*.test.js\"",
+    "test:all": "node --test \"test/unit/**/*.test.js\" \"test/functional/**/*.test.js\" \"test/integration/**/*.test.js\" \"test/performance/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.1"
+  }
+}
