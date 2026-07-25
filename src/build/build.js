@@ -14,6 +14,7 @@ import { reconcileCatalog } from './reconcileCsv.js';
 import { createEmbedder } from '../lib/embed.js';
 import { generateMissingEmbeddings } from './embedBuild.js';
 import { applyTopicsToAllBooks } from './applyTopics.js';
+import { applyReaderLevelRules } from './readerLevel.js';
 
 const DB_PATH = path.resolve('data/db/library.db');
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
@@ -70,6 +71,11 @@ if (fs.existsSync(TAXONOMY_PATH) && fs.existsSync(MAPPING_PATH)) {
 } else {
   console.log('topic_taxonomy.json / topic_mapping.json が無いためtopics適用をスキップします');
 }
+
+const levelSummary = applyReaderLevelRules(db);
+console.log(
+  `reader_levelルール判定: 対象=${levelSummary.checked}件 更新=${levelSummary.updated}件 (beginner=${levelSummary.beginnerCount} advanced=${levelSummary.advancedCount})`
+);
 
 console.log('埋め込みモデルをロード中...');
 const embedStart = Date.now();
