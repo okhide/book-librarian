@@ -47,11 +47,18 @@ function toBookParams(parsed) {
   };
 }
 
-/** book_keywords/book_topics/book_embeddings のうちその本に属する行を全削除する。 */
+/** book_keywords/book_topics のうちその本に属する行を全削除する。 */
 function deleteChildRows(db, bookId) {
   db.prepare('DELETE FROM book_keywords WHERE book_id = ?').run(bookId);
   db.prepare('DELETE FROM book_topics WHERE book_id = ?').run(bookId);
-  db.prepare('DELETE FROM book_embeddings WHERE book_id = ?').run(bookId);
+}
+
+/** embed_source_hashが変わった本の古い埋め込みだけを削除する（不要な再生成を避けるため）。 */
+function deleteEmbeddingIfSourceChanged(db, bookId, newEmbedSourceHash) {
+  const current = db.prepare('SELECT embed_source_hash FROM books WHERE id = ?').get(bookId);
+  if (current && current.embed_source_hash !== newEmbedSourceHash) {
+    db.prepare('DELETE FROM book_embeddings WHERE book_id = ?').run(bookId);
+  }
 }
 
 function insertKeywords(db, bookId, keywords) {
@@ -119,6 +126,7 @@ export function updateBook(db, bookId, { filePath, fileMtime, contentHash, parse
   `);
 
   const run = db.transaction(() => {
+    deleteEmbeddingIfSourceChanged(db, bookId, p.embedSourceHash);
     stmt.run({ bookId, filePath, fileMtime, contentHash, ...p, updatedAt: now });
     deleteChildRows(db, bookId);
     insertKeywords(db, bookId, parsed.keywords);
@@ -152,6 +160,13 @@ export function getKeywordsForBook(db, bookId) {
     .prepare('SELECT keyword FROM book_keywords WHERE book_id = ? ORDER BY rowid')
     .all(bookId)
     .map((r) => r.keyword);
+}
+
+export function getTopicsForBook(db, bookId) {
+  return db
+    .prepare('SELECT topic FROM book_topics WHERE book_id = ? ORDER BY rowid')
+    .all(bookId)
+    .map((r) => r.topic);
 }
 
 /** status='pending'の本の中から、csv_filenameがmdFilenameに対応するものを探す。 */

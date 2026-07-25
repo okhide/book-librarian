@@ -11,6 +11,8 @@ import { runDiffUpdate } from './diffUpdate.js';
 import { runFullRebuild } from './fullRebuild.js';
 import { parseCatalogCsv } from './csv.js';
 import { reconcileCatalog } from './reconcileCsv.js';
+import { createEmbedder } from '../lib/embed.js';
+import { generateMissingEmbeddings } from './embedBuild.js';
 
 const DB_PATH = path.resolve('data/db/library.db');
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
@@ -52,5 +54,16 @@ if (forceFullRebuild || existingCount === 0) {
     `蔵書リスト.csv突き合わせ: 既存本への記録=${reconcileSummary.matched} 新規pending追加=${reconcileSummary.pendingInserted}`
   );
 }
+
+console.log('埋め込みモデルをロード中...');
+const embedStart = Date.now();
+const extractor = await createEmbedder();
+console.log(`ロード完了 (${Date.now() - embedStart}ms)`);
+
+const embedGenStart = Date.now();
+const { generated, total } = await generateMissingEmbeddings(db, extractor);
+console.log(
+  `埋め込み生成: ${generated}/${total}件 (${Date.now() - embedGenStart}ms)`
+);
 
 db.close();
