@@ -396,6 +396,8 @@ FTS5のBM25が使えないため、以下を合成したスコアで並べる。
 
 司書AIが「ヒットした50冊を横断して比較・統合した回答」を作ることが現実的に可能なため、`search` の結果に `summary_short` を含めて一括で返すオプション（`--with-summary`）を用意する。これは `02_use_cases.md` の横断統合回答のユースケースを支える。
 
+**実装時の注意（Step 4.1で判明）**: `--with-summary` の結果件数（`returnedCount`）が `totalCount`（キーワード一致件数）を超えることがある。候補プールにはキーワード一致だけでなく意味検索のみで見つかった補足候補（`matchedByKeyword=false`）も含むため。両者の関係を明示する `matchedByKeywordCount` を出力に含める（`returnedCount = matchedByKeywordCount + 意味検索のみの件数`）。
+
 ### 差分更新の要件
 
 **大原則: 追加・更新のあった本だけを処理する。変更のない本には一切触れない。**（ユーザー要求）

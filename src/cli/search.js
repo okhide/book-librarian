@@ -2,27 +2,38 @@
 // 使い方:
 //   node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C]
 //                           [--topic T] [--level L] [--vector-threshold T]
-//                           [--json] [--data-issues]
+//                           [--with-summary] [--json] [--data-issues]
+//
+// --with-summary: 複数冊の要約summary_shortをまとめて取得するモード。
+//   件数上限を200件に引き上げ、文字数が上限(既定40,000字)を超えないよう
+//   自動的に切る（doc/03_specification.md「複数冊の一括取得」参照）。
+//   横断的な統合回答（例:「投資について蔵書は総じて何を言っている？」）を
+//   作る際に使う。
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
 import { createEmbedder } from '../lib/embed.js';
 import { hybridSearch } from '../lib/hybridSearch.js';
+import { capResultsByCharBudget, DEFAULT_MAX_COUNT } from '../lib/bulkSummary.js';
 
 function parseArgs(argv) {
-  const args = { limit: 20, json: false, dataIssues: false };
+  const args = { limit: 20, json: false, dataIssues: false, withSummary: false, limitExplicit: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') args.json = true;
     else if (a === '--data-issues') args.dataIssues = true;
-    else if (a === '--limit') args.limit = Number(argv[++i]);
-    else if (a === '--year') args.year = Number(argv[++i]);
+    else if (a === '--with-summary') args.withSummary = true;
+    else if (a === '--limit') {
+      args.limit = Number(argv[++i]);
+      args.limitExplicit = true;
+    } else if (a === '--year') args.year = Number(argv[++i]);
     else if (a === '--category') args.category = argv[++i];
     else if (a === '--topic') args.topic = argv[++i];
     else if (a === '--level') args.level = argv[++i];
     else if (a === '--vector-threshold') args.vectorHitThreshold = Number(argv[++i]);
     else rest.push(a);
   }
+  if (args.withSummary && !args.limitExplicit) args.limit = DEFAULT_MAX_COUNT;
   args.query = rest.join(' ');
   return args;
 }
@@ -41,12 +52,21 @@ function printDataIssues(rows, json) {
   }
 }
 
-function printResults(query, totalCount, results, json) {
+function printResults(query, totalCount, results, json, truncated) {
+  // returnedCountがtotalCountを超えることがある。totalCountはキーワード一致件数のみを
+  // 数えるが、resultsには意味検索のみで一致した補足候補も含むため
+  // （doc/03_specification.md「ハイブリッド検索」参照）。matchedByKeywordCountで
+  // 両者の関係を明示する: returnedCount = matchedByKeywordCount + (意味検索のみの件数)。
+  const matchedByKeywordCount = results.filter((r) => r.matchedByKeyword).length;
+
   if (json) {
     console.log(
       JSON.stringify(
         {
           totalCount,
+          returnedCount: results.length,
+          matchedByKeywordCount,
+          truncated,
           results: results.map((r) => ({
             id: r.book.id,
             title: r.book.title,
@@ -63,6 +83,12 @@ function printResults(query, totalCount, results, json) {
     return;
   }
   console.log(`"${query}" — ${totalCount}件ヒット（上位${results.length}件を表示）`);
+  if (results.length > totalCount) {
+    console.log(`（うちキーワード一致は${matchedByKeywordCount}件。残りは意味検索のみで見つかった補足候補です）`);
+  }
+  if (truncated) {
+    console.log('（件数または文字数の上限により一部の結果は省略されています）');
+  }
   results.forEach((r, i) => {
     const tag = r.matchedByKeyword ? '' : ' [意味検索のみ]';
     console.log(`${i + 1}. [${r.book.id}] ${r.book.title} — ${r.book.author ?? '著者不明'}${tag}`);
@@ -105,7 +131,15 @@ async function main() {
     vectorHitThreshold: args.vectorHitThreshold,
   });
 
-  printResults(args.query, totalCount, results, args.json);
+  let finalResults = results;
+  let truncated = false;
+  if (args.withSummary) {
+    const capped = capResultsByCharBudget(results);
+    finalResults = capped.results;
+    truncated = capped.truncated;
+  }
+
+  printResults(args.query, totalCount, finalResults, args.json, truncated);
   db.close();
 }
 

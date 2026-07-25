@@ -100,6 +100,16 @@ test('CLI', async (t) => {
     assert.ok(parsed.some((t) => t.topic === '会計・財務' && t.count === 1));
   });
 
+  await t.test('search --with-summary: returnedCount/matchedByKeywordCount/truncatedを含み、全件summaryShortを持つ', () => {
+    const output = runCli('src/cli/search.js', ['会計', '--with-summary', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.ok('returnedCount' in parsed);
+    assert.ok('matchedByKeywordCount' in parsed);
+    assert.ok('truncated' in parsed);
+    assert.ok(parsed.matchedByKeywordCount <= parsed.returnedCount);
+    assert.ok(parsed.results.every((r) => typeof r.summaryShort === 'string' && r.summaryShort.length > 0));
+  });
+
   await t.test('stats: 統計一式がJSONで返る', () => {
     const output = runCli('src/cli/stats.js', ['--json'], dbPath);
     const parsed = JSON.parse(output);
