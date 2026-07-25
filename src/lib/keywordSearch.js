@@ -60,17 +60,26 @@ function scoreBook(book, keywords, topics, queryLower) {
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string} queryText
- * @param {{limit?: number, includeStatuses?: string[]}} [options]
+ * @param {{limit?: number, includeStatuses?: string[], year?: number, category?: string}} [options]
  * @returns {{totalCount: number, results: Array<{book: object, score: number}>}}
  */
 export function searchByKeyword(db, queryText, options = {}) {
-  const { limit = 50, includeStatuses = ['summarized'] } = options;
+  const { limit = 50, includeStatuses = ['summarized'], year, category } = options;
   const queryLower = queryText.toLowerCase();
   const placeholders = includeStatuses.map(() => '?').join(',');
 
-  const rows = db
-    .prepare(`SELECT * FROM books WHERE search_text LIKE ? AND status IN (${placeholders})`)
-    .all(`%${queryLower}%`, ...includeStatuses);
+  const conditions = [`search_text LIKE ?`, `status IN (${placeholders})`];
+  const params = [`%${queryLower}%`, ...includeStatuses];
+  if (year != null) {
+    conditions.push('publication_year = ?');
+    params.push(year);
+  }
+  if (category != null) {
+    conditions.push('category_raw = ?');
+    params.push(category);
+  }
+
+  const rows = db.prepare(`SELECT * FROM books WHERE ${conditions.join(' AND ')}`).all(...params);
 
   const getKeywords = db.prepare('SELECT keyword FROM book_keywords WHERE book_id = ?');
   const getTopics = db.prepare('SELECT topic FROM book_topics WHERE book_id = ?');

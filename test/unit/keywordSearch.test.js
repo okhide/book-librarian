@@ -65,3 +65,26 @@ test('日本語の部分一致が機能する（英単語の大文字小文字�
   assert.ok(results.length >= 1);
   db.close();
 });
+
+test('yearで絞り込める', () => {
+  const db = makeDb();
+  const normalBook = getBookByFilePath(db, 'normal_book.md');
+  assert.equal(normalBook.publication_year, 2020);
+
+  const matched = searchByKeyword(db, '会計', { year: 2020 });
+  assert.ok(matched.results.length >= 1);
+
+  const unmatched = searchByKeyword(db, '会計', { year: 1999 });
+  assert.equal(unmatched.results.length, 0);
+  db.close();
+});
+
+test('categoryで絞り込める', () => {
+  const db = makeDb();
+  const matched = searchByKeyword(db, '会計', { category: '実用書' });
+  assert.ok(matched.results.length >= 1);
+
+  const unmatched = searchByKeyword(db, '会計', { category: '技術書' });
+  assert.equal(unmatched.results.length, 0);
+  db.close();
+});

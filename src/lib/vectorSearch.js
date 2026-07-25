@@ -11,11 +11,36 @@ function dot(a, b) {
   return s;
 }
 
-/** @returns {Array<{bookId: number, vector: Float32Array}>} */
-export function loadAllEmbeddings(db) {
+/**
+ * book_embeddingsを読み込む。論理削除された本もembeddingの行自体は残っている
+ * （doc/03_specification.md「削除されたファイルの扱い」参照）ため、既定では
+ * booksテーブルと結合してstatus='summarized'のみに絞る。
+ * @param {import('better-sqlite3').Database} db
+ * @param {{includeStatuses?: string[], year?: number, category?: string}} [options]
+ * @returns {Array<{bookId: number, vector: Float32Array}>}
+ */
+export function loadAllEmbeddings(db, options = {}) {
+  const { includeStatuses = ['summarized'], year, category } = options;
+  const placeholders = includeStatuses.map(() => '?').join(',');
+  const conditions = [`b.status IN (${placeholders})`];
+  const params = [...includeStatuses];
+  if (year != null) {
+    conditions.push('b.publication_year = ?');
+    params.push(year);
+  }
+  if (category != null) {
+    conditions.push('b.category_raw = ?');
+    params.push(category);
+  }
+
   return db
-    .prepare('SELECT book_id, embedding FROM book_embeddings')
-    .all()
+    .prepare(
+      `SELECT e.book_id as book_id, e.embedding as embedding
+       FROM book_embeddings e
+       JOIN books b ON b.id = e.book_id
+       WHERE ${conditions.join(' AND ')}`
+    )
+    .all(...params)
     .map((row) => ({ bookId: row.book_id, vector: blobToFloatArray(row.embedding) }));
 }
 
