@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+echo 作業フォルダ: %cd%
 
 where claude >nul 2>nul
 if %errorlevel%==0 (
@@ -12,10 +13,13 @@ if %errorlevel%==0 (
     exit /b 1
 )
 
+echo 実行するコマンド: %CLAUDE_CMD% "/book-librarian 何ができるか教えてください"
+echo.
+
 %CLAUDE_CMD% "/book-librarian 何ができるか教えてください"
 
-if errorlevel 1 (
-    echo.
-    echo エラーが発生しました（終了コード: %errorlevel%）。
-    pause
-)
+echo.
+echo ----------------------------------------
+echo claudeが終了しました（終了コード: %errorlevel%）。
+echo このウィンドウは何かキーを押すまで閉じません。
+pause
