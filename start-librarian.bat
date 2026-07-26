@@ -12,7 +12,7 @@ if %errorlevel%==0 (
     exit /b 1
 )
 
-%CLAUDE_CMD% "この蔵書ツールで何ができるか教えてください"
+%CLAUDE_CMD% "/book-librarian 何ができるか教えてください"
 
 if errorlevel 1 (
     echo.
