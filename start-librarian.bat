@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul
+mode con: cols=120 lines=50 >nul 2>nul
 cd /d "%~dp0"
 echo 作業フォルダ: %cd%
 
