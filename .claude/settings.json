@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node spike/s09_gemini_api.js)",
+      "Bash(node src/cli/search.js *)",
+      "Bash(node src/cli/show.js *)",
+      "Bash(node src/cli/similar.js *)",
+      "Bash(node src/cli/topics.js)",
+      "Bash(node src/cli/topics.js *)",
+      "Bash(node src/cli/stats.js)",
+      "Bash(node src/cli/stats.js *)",
+      "Bash(node src/cli/duplicates.js)",
+      "Bash(node src/cli/duplicates.js *)"
+    ]
+  }
+}
