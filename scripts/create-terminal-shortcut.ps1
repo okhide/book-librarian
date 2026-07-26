@@ -12,7 +12,7 @@ $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 # Windows Terminalを明示的に起動する（PowerShell単体のRawUIリサイズは
 # Windows Terminal環境では効かないため、wt.exeの--sizeで初期ウィンドウサイズを指定する）。
 $Shortcut.TargetPath = "wt.exe"
-$Shortcut.Arguments = "--size 120,50 -d `"$ProjectRoot`" powershell.exe -NoExit"
+$Shortcut.Arguments = "--size 120,40 -d `"$ProjectRoot`" powershell.exe -NoExit"
 $Shortcut.WorkingDirectory = $ProjectRoot
 $Shortcut.Description = "このプロジェクトのフォルダでPowerShellを開く"
 $Shortcut.WindowStyle = 1

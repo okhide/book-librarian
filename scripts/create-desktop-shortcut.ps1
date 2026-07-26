@@ -19,7 +19,7 @@ $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 # Windows Terminalをホストとして明示的に起動する（cmd.exe単体の`mode con:`は
 # Windows Terminal環境では効かないため、wt.exeの--sizeで初期ウィンドウサイズを指定する）。
 $Shortcut.TargetPath = "wt.exe"
-$Shortcut.Arguments = "--size 120,50 cmd /c `"$TargetBat`""
+$Shortcut.Arguments = "--size 120,65 cmd /c `"$TargetBat`""
 $Shortcut.WorkingDirectory = $ProjectRoot
 $Shortcut.Description = "蔵書AI司書（Claude Code）を起動"
 $Shortcut.WindowStyle = 1
