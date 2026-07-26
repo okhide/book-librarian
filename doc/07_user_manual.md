@@ -105,6 +105,16 @@ node src/build/build.js
 
 > 📌 Windowsのスタートメニューにある「Claude」というアプリ（一般的な会話用のClaude Desktop app）からも、フォルダを指定して同じように使えるかは確認できていません。**確実に動作するのは上記のショートカット（Claude Code CLIをこのフォルダで起動する方法）です。**
 
+### 3.8 （Windows）手動でコマンドを打つためのターミナルショートカット
+
+`notebooklm login`（ログインは必ず自分の手で行う必要がある）や`node src/build/build.js`（データベースの更新）を、AIに頼らず自分で直接実行したい場合のためのショートカットです。Claude Codeを起動しているウィンドウとは別に、もう1つ開いて併用できます。
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\create-terminal-shortcut.ps1
+```
+
+デスクトップに「蔵書ターミナル」というショートカットが作成されます。ダブルクリックすると、このプロジェクトのフォルダを開いた状態のPowerShellが起動します。
+
 ## 4. 基本的な使い方
 
 ### 4.1 AI司書との会話を始める

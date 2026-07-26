@@ -1,4 +1,4 @@
-# デスクトップに「蔵書AI司書」というショートカットを作成する。
+﻿# デスクトップに「蔵書AI司書」というショートカットを作成する。
 # ダブルクリックすると、このプロジェクトのフォルダでClaude Codeが起動する。
 # 使い方: PowerShellでこのファイルを実行する
 #   powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
