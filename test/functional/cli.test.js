@@ -162,6 +162,15 @@ test('CLI', async (t) => {
     assert.equal(parsed.dataIssuesCount, 2);
   });
 
+  await t.test('stats --clusters: クラスタ情報が追加され、全件がいずれかのクラスタに含まれる', () => {
+    // fixturesのsummarized本は6件のため、既定k=20だとエラーになる。--kで小さくする
+    const output = runCli('src/cli/stats.js', ['--json', '--clusters', '--k', '2'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.clusters.length, 2);
+    const totalSize = parsed.clusters.reduce((s, c) => s + c.size, 0);
+    assert.equal(totalSize, 6);
+  });
+
   t.after(() => {
     fs.rmSync(dbPath, { force: true });
   });
