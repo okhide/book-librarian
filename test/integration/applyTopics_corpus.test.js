@@ -30,10 +30,11 @@ test('実データの本にtopicsが適用され、taxonomy外のトピックが
     .filter((r) => !validTopics.has(r.topic));
   assert.deepEqual(invalidTopics, []);
 
+  const totalSummarized = db.prepare("SELECT COUNT(*) as n FROM books WHERE status = 'summarized'").get().n;
   const withVersion = db
     .prepare("SELECT COUNT(*) as n FROM books WHERE status = 'summarized' AND topic_dict_version IS NOT NULL")
     .get().n;
-  assert.equal(withVersion, 2527);
+  assert.equal(withVersion, totalSummarized, 'topic_dict_versionが未設定のsummarized本がある');
 
   db.close();
 });
