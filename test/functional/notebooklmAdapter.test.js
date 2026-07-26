@@ -2,16 +2,22 @@
 // 実際のnotebooklmコマンドは呼ばない。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createNotebookLmAdapter, notebookTitleForTheme } from '../../src/bridge/notebooklm/adapter.js';
+import { createNotebookLmAdapter, notebookTitleForTheme, extractDriveFileId } from '../../src/bridge/notebooklm/adapter.js';
 
+const DRIVE_URL_A = 'https://drive.google.com/file/d/FILE_ID_A/view?usp=drivesdk';
+const DRIVE_URL_B = 'https://drive.google.com/file/d/FILE_ID_B/view?usp=drivesdk';
+
+// createNotebook/addDriveSourceのレスポンス形状は実機確認済み
+// （create: {notebook:{...}}という入れ子、add-drive: --jsonが無く平文出力を
+//  cli.js側で{ok, sourceId, raw}に正規化済み、という前提で組む）。
 function fakeCli(overrides = {}) {
   return {
     authCheck: async () => ({ status: 'ok' }),
     listNotebooks: async () => ({ notebooks: [] }),
-    createNotebook: async (title) => ({ id: 'nb_new', title }),
+    createNotebook: async (title) => ({ notebook: { id: 'nb_new', title } }),
     listSources: async () => ({ sources: [] }),
-    addSource: async (notebookId, driveUrl, options) => ({ id: `src_${driveUrl}`, title: options.title }),
-    deleteNotebook: async () => ({ deleted: true }),
+    addDriveSource: async (notebookId, fileId) => ({ ok: true, sourceId: `src_${fileId}`, raw: {} }),
+    deleteNotebook: async () => ({ ok: true }),
     ask: async () => ({ answer: 'ok' }),
     generateQuiz: async () => ({ status: 'completed' }),
     ...overrides,
@@ -20,6 +26,15 @@ function fakeCli(overrides = {}) {
 
 test('notebookTitleForTheme: 固定命名規則になる', () => {
   assert.equal(notebookTitleForTheme('会計'), '蔵書ライブラリ: 会計');
+});
+
+test('extractDriveFileId: /file/d/<ID>/view形式からファイルIDを抽出する', () => {
+  assert.equal(extractDriveFileId(DRIVE_URL_A), 'FILE_ID_A');
+});
+
+test('extractDriveFileId: 形式が違う/nullなら抽出できない', () => {
+  assert.equal(extractDriveFileId('https://example.com/not-a-drive-url'), null);
+  assert.equal(extractDriveFileId(null), null);
 });
 
 test('checkSession: authCheckがokならok:true', async () => {
@@ -42,7 +57,7 @@ test('getOrCreateNotebook: 同一タイトルが既存ならそれを再利用�
     listNotebooks: async () => ({ notebooks: [{ id: 'nb1', title: '蔵書ライブラリ: 会計' }] }),
     createNotebook: async () => {
       createCalled = true;
-      return { id: 'nb_new' };
+      return { notebook: { id: 'nb_new' } };
     },
   });
   const adapter = createNotebookLmAdapter(cli);
@@ -67,44 +82,53 @@ test('registerBooksToNotebook: drive_urlが無い本はスキップされる', a
   assert.match(results[0].reason, /drive_url/);
 });
 
-test('registerBooksToNotebook: 既存ソースと同じdrive_urlの本はスキップされる（重複防止）', async () => {
+test('registerBooksToNotebook: drive_urlからファイルIDを抽出できない場合はerror', async () => {
+  const adapter = createNotebookLmAdapter(fakeCli());
+  const results = await adapter.registerBooksToNotebook('nb1', [
+    { title: '本A', drive_url: 'https://example.com/not-a-drive-url' },
+  ]);
+  assert.equal(results[0].status, 'error');
+  assert.match(results[0].reason, /ファイルID/);
+});
+
+test('registerBooksToNotebook: 既存ソースと同じタイトルの本はスキップされる（重複防止）', async () => {
   const cli = fakeCli({
-    listSources: async () => ({ sources: [{ drive_url: 'https://drive.example/a', title: '本A' }] }),
+    listSources: async () => ({ sources: [{ title: '本A', url: null }] }),
   });
   const adapter = createNotebookLmAdapter(cli);
-  const results = await adapter.registerBooksToNotebook('nb1', [
-    { title: '本A', drive_url: 'https://drive.example/a' },
-  ]);
+  const results = await adapter.registerBooksToNotebook('nb1', [{ title: '本A', drive_url: DRIVE_URL_A }]);
   assert.equal(results[0].status, 'skipped');
   assert.match(results[0].reason, /既に登録済み/);
 });
 
-test('registerBooksToNotebook: 新規の本はaddSourceが呼ばれ、以降の重複チェックにも反映される', async () => {
+test('registerBooksToNotebook: 新規の本はaddDriveSourceが呼ばれ、以降の重複チェックにも反映される', async () => {
   const addedCalls = [];
   const cli = fakeCli({
-    addSource: async (notebookId, driveUrl, options) => {
-      addedCalls.push({ notebookId, driveUrl, options });
-      return { id: 'src1' };
+    addDriveSource: async (notebookId, fileId, title, options) => {
+      addedCalls.push({ notebookId, fileId, title, options });
+      return { ok: true, sourceId: 'src1', raw: {} };
     },
   });
   const adapter = createNotebookLmAdapter(cli);
   const results = await adapter.registerBooksToNotebook('nb1', [
-    { title: '本A', drive_url: 'https://drive.example/a' },
-    { title: '本A', drive_url: 'https://drive.example/a' }, // 同一バッチ内の重複も2件目でスキップされるべき
+    { title: '本A', drive_url: DRIVE_URL_A },
+    { title: '本A', drive_url: DRIVE_URL_A }, // 同一バッチ内の重複も2件目でスキップされるべき
   ]);
   assert.equal(results[0].status, 'added');
   assert.equal(results[1].status, 'skipped');
   assert.equal(addedCalls.length, 1);
+  assert.equal(addedCalls[0].fileId, 'FILE_ID_A');
+  assert.equal(addedCalls[0].options.mimeType, 'pdf');
 });
 
-test('registerBooksToNotebook: addSourceがエラーを返した本はerrorステータスになる', async () => {
-  const cli = fakeCli({ addSource: async () => ({ error: true, message: '容量制限' }) });
+test('registerBooksToNotebook: addDriveSourceが失敗した本はerrorステータスになる', async () => {
+  const cli = fakeCli({
+    addDriveSource: async () => ({ ok: false, sourceId: null, raw: { stderr: 'Error: Invalid source data: None' } }),
+  });
   const adapter = createNotebookLmAdapter(cli);
-  const results = await adapter.registerBooksToNotebook('nb1', [
-    { title: '本A', drive_url: 'https://drive.example/a' },
-  ]);
+  const results = await adapter.registerBooksToNotebook('nb1', [{ title: '本A', drive_url: DRIVE_URL_A }]);
   assert.equal(results[0].status, 'error');
-  assert.equal(results[0].reason, '容量制限');
+  assert.match(results[0].reason, /Invalid source data/);
 });
 
 test('registerBooks: セッション無効なら通知だけしてノートブック操作は行わない', async () => {
@@ -126,7 +150,7 @@ test('registerBooks: 正常系はnotebook・created・resultsを返す', async (
   const adapter = createNotebookLmAdapter(fakeCli());
   const result = await adapter.registerBooks({
     theme: '会計',
-    books: [{ title: '本A', drive_url: 'https://drive.example/a' }],
+    books: [{ title: '本A', drive_url: DRIVE_URL_A }],
   });
   assert.equal(result.ok, true);
   assert.equal(result.created, true);
@@ -138,18 +162,21 @@ test('finalize: 既存ノートブック再利用時は削除確認自体が不�
   const cli = fakeCli({
     deleteNotebook: async () => {
       deleteCalled = true;
-      return { deleted: true };
+      return { ok: true };
     },
   });
   const adapter = createNotebookLmAdapter(cli);
-  const result = await adapter.finalize('nb1', { created: false, keep: false });
+  const result = await adapter.finalize({ id: 'nb1', title: '無関係な既存ノートブック' }, { created: false, keep: false });
   assert.equal(result.deleted, false);
   assert.equal(deleteCalled, false);
 });
 
 test('finalize: 新規作成でkeep=trueなら削除しない', async () => {
   const adapter = createNotebookLmAdapter(fakeCli());
-  const result = await adapter.finalize('nb1', { created: true, keep: true });
+  const result = await adapter.finalize(
+    { id: 'nb1', title: '蔵書ライブラリ: 会計' },
+    { created: true, keep: true }
+  );
   assert.equal(result.deleted, false);
 });
 
@@ -158,11 +185,30 @@ test('finalize: 新規作成でkeep=falseならdeleteNotebookを呼ぶ', async (
   const cli = fakeCli({
     deleteNotebook: async () => {
       deleteCalled = true;
-      return { deleted: true };
+      return { ok: true };
     },
   });
   const adapter = createNotebookLmAdapter(cli);
-  const result = await adapter.finalize('nb1', { created: true, keep: false });
+  const result = await adapter.finalize(
+    { id: 'nb1', title: '蔵書ライブラリ: 会計' },
+    { created: true, keep: false }
+  );
   assert.equal(result.deleted, true);
   assert.equal(deleteCalled, true);
+});
+
+test('finalize: タイトルが命名規則プレフィックスと一致しない場合は削除を拒否する（createdフラグ取り違え等への保険）', async () => {
+  let deleteCalled = false;
+  const cli = fakeCli({
+    deleteNotebook: async () => {
+      deleteCalled = true;
+      return { ok: true };
+    },
+  });
+  const adapter = createNotebookLmAdapter(cli);
+  await assert.rejects(
+    () => adapter.finalize({ id: 'nb1', title: '本 : 趣味・教養' }, { created: true, keep: false }),
+    /命名規則/
+  );
+  assert.equal(deleteCalled, false);
 });

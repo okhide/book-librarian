@@ -32,6 +32,7 @@ if (!idArg) {
         `著者: ${book.author ?? '不明'} / 出版社: ${book.publisher ?? '不明'} / 出版年: ${book.publication_year ?? '不明'}`
       );
       console.log(`キーワード: ${keywords.join('、')}`);
+      if (book.drive_url) console.log(`蔵書本体（Google Drive）: ${book.drive_url}`);
       console.log('');
       console.log(book.summary_long);
     }

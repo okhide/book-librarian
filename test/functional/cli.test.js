@@ -24,6 +24,9 @@ async function buildTempDb(extractor) {
   const normalBookId = getBookByFilePath(db, 'normal_book.md').id;
   db.prepare("INSERT INTO book_topics (book_id, topic) VALUES (?, '会計・財務')").run(normalBookId);
   db.prepare("UPDATE books SET reader_level = 'beginner' WHERE id = ?").run(normalBookId);
+  db.prepare("UPDATE books SET drive_url = 'https://drive.google.com/file/d/TEST_FILE_ID/view' WHERE id = ?").run(
+    normalBookId
+  );
   db.close(); // 子プロセスから開けるようファイルロックを解放する
   return { dbPath, normalBookId };
 }
@@ -63,6 +66,11 @@ test('CLI', async (t) => {
     const output = runCli('src/cli/show.js', [String(normalBookId)], dbPath);
     assert.match(output, /テスト用の会計入門book/);
     assert.match(output, /簿記は日々の取引を記録する技術である/); // summary_longの一部
+  });
+
+  await t.test('show: drive_urlがあれば蔵書本体へのリンクとして表示される', () => {
+    const output = runCli('src/cli/show.js', [String(normalBookId)], dbPath);
+    assert.match(output, /https:\/\/drive\.google\.com\/file\/d\/TEST_FILE_ID\/view/);
   });
 
   await t.test('show --json: 全フィールドがJSONで返る', () => {

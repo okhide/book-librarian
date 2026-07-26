@@ -45,7 +45,8 @@ async function runJson(args, execFn) {
   return parsed;
 }
 
-// download系コマンドは`--json`を持たず、ファイル内容そのものを出力する。
+// download系・delete系コマンドは`--json`を持たず、平文を出力する
+//（`delete --json`は`No such option: --json`エラーになることを実機で確認済み）。
 // JSONパースはせず生の標準出力/標準エラーとexit可否をそのまま返す。
 async function runRaw(args, execFn) {
   try {
@@ -53,6 +54,20 @@ async function runRaw(args, execFn) {
     return { ok: true, stdout, stderr };
   } catch (err) {
     return { ok: false, stdout: err.stdout ?? '', stderr: err.stderr ?? String(err.message ?? err) };
+  }
+}
+
+// notebooklmは `-n` に空文字/未指定を渡すと「現在のコンテキストのノートブック」に
+// フォールバックする（--helpの記載通り）。これは呼び出し側のバグ（IDが空になった等）を
+// 全く別の、しかもユーザーの既存ノートブックに対する操作にすり替えてしまう危険な仕様。
+// 実際にこの事故（無関係な既存ノートブックの削除）が発生したため、notebookIdを取る
+// 全メソッドの入口でstring型かつ非空であることを必須にする。
+function requireNotebookId(notebookId, actionLabel) {
+  if (typeof notebookId !== 'string' || notebookId.trim() === '') {
+    throw new Error(
+      `notebooklm ${actionLabel}: notebookIdが空です（呼び出し側のバグの可能性）。` +
+        '空/未指定のIDは"現在のコンテキストのノートブック"にフォールバックし、意図しないノートブックを操作する事故につながるため、意図的に拒否している。'
+    );
   }
 }
 
@@ -66,36 +81,72 @@ export function createNotebookLmCli(execFn = defaultExecFn) {
 
     listNotebooks: () => runJson(['list', '--json'], execFn),
     createNotebook: (title) => runJson(['create', title, '--json'], execFn),
-    deleteNotebook: (notebookId) => runJson(['delete', '-n', notebookId, '-y', '--json'], execFn),
+    // deleteは--jsonを受け付けないため生出力。「Deleted notebook: <id>」の文言で成否を判定する
+    deleteNotebook: async (notebookId) => {
+      requireNotebookId(notebookId, 'delete');
+      const result = await runRaw(['delete', '-n', notebookId, '-y'], execFn);
+      return { ok: result.ok && /Deleted notebook/.test(result.stdout), raw: result };
+    },
 
-    listSources: (notebookId) => runJson(['source', 'list', '-n', notebookId, '--json'], execFn),
-    addSource: (notebookId, content, options = {}) => {
+    // requireNotebookIdの失敗を常にPromiseのrejectとして呼び出し側に伝える必要があるため
+    // （同期throwだとcatchし忘れる呼び出し側が出てくる）、notebookIdを取るメソッドは全てasyncにする。
+    listSources: async (notebookId) => {
+      requireNotebookId(notebookId, 'source list');
+      return runJson(['source', 'list', '-n', notebookId, '--json'], execFn);
+    },
+    addSource: async (notebookId, content, options = {}) => {
+      requireNotebookId(notebookId, 'source add');
       const args = ['source', 'add', content, '-n', notebookId, '--json'];
       if (options.title) args.push('--title', options.title);
       if (options.type) args.push('--type', options.type);
       return runJson(args, execFn);
     },
+    // 汎用の`source add --type url`でGoogle DriveのURLを渡すと、Googleのボット検出で
+    // CAPTCHAページが返され内容を読めない（実機検証済み）。Drive上のファイルは専用の
+    // `source add-drive`（認証済みDrive APIアクセス）を使う必要がある。このコマンドは
+    // --jsonを持たないため平文出力を解析する。titleは指定しても実際はDrive側の
+    // メタデータのタイトルで上書きされる（notebooklm-py本体の既知の仕様）。
+    addDriveSource: async (notebookId, fileId, title, options = {}) => {
+      requireNotebookId(notebookId, 'source add-drive');
+      const args = [
+        'source',
+        'add-drive',
+        fileId,
+        title,
+        '-n',
+        notebookId,
+        '--mime-type',
+        options.mimeType ?? 'pdf',
+      ];
+      const result = await runRaw(args, execFn);
+      const match = result.stdout.match(/Added Drive source: (\S+)/);
+      return { ok: result.ok && !!match, sourceId: match ? match[1] : null, raw: result };
+    },
 
-    ask: (notebookId, question, options = {}) => {
+    ask: async (notebookId, question, options = {}) => {
+      requireNotebookId(notebookId, 'ask');
       const args = ['ask', question, '-n', notebookId, '--json'];
       if (options.conversationId) args.push('-c', options.conversationId);
       for (const sourceId of options.sourceIds ?? []) args.push('-s', sourceId);
       return runJson(args, execFn);
     },
 
-    generateQuiz: (notebookId, options = {}) => {
+    generateQuiz: async (notebookId, options = {}) => {
+      requireNotebookId(notebookId, 'generate quiz');
       const args = ['generate', 'quiz', '-n', notebookId, '--json', '--wait'];
       if (options.quantity) args.push('--quantity', options.quantity);
       if (options.difficulty) args.push('--difficulty', options.difficulty);
       for (const sourceId of options.sourceIds ?? []) args.push('-s', sourceId);
       return runJson(args, execFn);
     },
-    waitForArtifact: (notebookId, artifactId, options = {}) => {
+    waitForArtifact: async (notebookId, artifactId, options = {}) => {
+      requireNotebookId(notebookId, 'artifact wait');
       const args = ['artifact', 'wait', artifactId, '-n', notebookId, '--json'];
       if (options.timeout) args.push('--timeout', String(options.timeout));
       return runJson(args, execFn);
     },
-    downloadQuiz: (notebookId, options = {}) => {
+    downloadQuiz: async (notebookId, options = {}) => {
+      requireNotebookId(notebookId, 'download quiz');
       const args = ['download', 'quiz', '-n', notebookId];
       if (options.format) args.push('--format', options.format);
       if (options.artifactId) args.push('-a', options.artifactId);

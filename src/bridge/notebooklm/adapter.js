@@ -22,6 +22,13 @@ function assertNoError(result, actionLabel) {
   return result;
 }
 
+// drive_urlは `https://drive.google.com/file/d/<FILE_ID>/view?...` 形式（蔵書リスト.csv由来）。
+// source add-driveはURLではなくファイルIDを要求するため抽出する。
+export function extractDriveFileId(driveUrl) {
+  const match = driveUrl?.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
 /**
  * @param {ReturnType<import('./cli.js').createNotebookLmCli>} cli
  */
@@ -57,24 +64,29 @@ export function createNotebookLmAdapter(cli) {
       const existing = notebooks.find((nb) => nb.title === title);
       if (existing) return { notebook: existing, created: false };
 
+      // create --json の実レスポンスは {notebook: {id, title, ...}} という入れ子（実機確認済み）
       const created = assertNoError(await cli.createNotebook(title), 'create');
-      return { notebook: created, created: true };
+      return { notebook: created.notebook ?? created, created: true };
     },
 
     /**
-     * 指定ノートブックへ本を登録する。既に同じdrive_url/タイトルのソースがあれば
-     * スキップする（本の重複登録防止）。
+     * 指定ノートブックへ本を登録する（Google Drive上のPDF本体を`source add-drive`で登録）。
+     * 既に同じタイトルのソースがあればスキップする（本の重複登録防止）。
+     *
+     * 制約: `source add-drive`成功時、ソースのタイトルはこちらが渡した値ではなく
+     * Google Drive側のファイルメタデータのタイトルに上書きされる（notebooklm-py本体の
+     * 既知の仕様、実機確認済み）。またDriveのファイルID自体はnotebooklmの`source list`
+     * レスポンスに含まれず、こちら側からは再現できない。そのため重複検知は
+     * 「本のtitleと完全一致するタイトルのソースが既にあるか」による近似判定であり、
+     * Drive側のファイル名が本のtitleと異なる場合は重複を見逃す可能性がある
+     * （実害は登録がスキップされず再度追加される程度で、データ破壊は無い）。
      * @param {string} notebookId
      * @param {Array<{title: string, drive_url: string|null}>} books
      */
     async registerBooksToNotebook(notebookId, books) {
       const sourceListResult = assertNoError(await cli.listSources(notebookId), 'source list');
       const existingSources = asArray(sourceListResult, 'sources');
-      const existingKeys = new Set();
-      for (const s of existingSources) {
-        if (s.drive_url) existingKeys.add(s.drive_url);
-        if (s.title) existingKeys.add(s.title);
-      }
+      const existingTitles = new Set(existingSources.map((s) => s.title).filter(Boolean));
 
       const results = [];
       for (const book of books) {
@@ -82,19 +94,23 @@ export function createNotebookLmAdapter(cli) {
           results.push({ book, status: 'skipped', reason: 'drive_urlが無いため登録できません' });
           continue;
         }
-        if (existingKeys.has(book.drive_url) || existingKeys.has(book.title)) {
-          results.push({ book, status: 'skipped', reason: '既に登録済み' });
+        const fileId = extractDriveFileId(book.drive_url);
+        if (!fileId) {
+          results.push({ book, status: 'error', reason: `drive_urlからファイルIDを抽出できません: ${book.drive_url}` });
+          continue;
+        }
+        if (existingTitles.has(book.title)) {
+          results.push({ book, status: 'skipped', reason: '既に登録済み（タイトル一致）' });
           continue;
         }
 
-        const added = await cli.addSource(notebookId, book.drive_url, { title: book.title, type: 'url' });
-        if (added.error) {
-          results.push({ book, status: 'error', reason: added.message });
+        const added = await cli.addDriveSource(notebookId, fileId, book.title, { mimeType: 'pdf' });
+        if (!added.ok) {
+          results.push({ book, status: 'error', reason: added.raw.stderr || added.raw.stdout });
           continue;
         }
-        results.push({ book, status: 'added', source: added });
-        existingKeys.add(book.drive_url);
-        existingKeys.add(book.title);
+        results.push({ book, status: 'added', sourceId: added.sourceId });
+        existingTitles.add(book.title);
       }
       return results;
     },
@@ -123,18 +139,26 @@ export function createNotebookLmAdapter(cli) {
 
     /**
      * 利用が一段落した後の後始末。新規作成したノートブックのみ削除可否の判断対象になる。
-     * @param {string} notebookId
+     * `notebook.title`が命名規則のプレフィックスと一致することを削除直前にも再確認する
+     * （createdフラグの取り違え等のバグがあっても無関係なノートブックを削除しないための保険。
+     * 実際に無関係な既存ノートブックを誤って削除する事故が起きたため導入した）。
+     * @param {{id: string, title: string}} notebook
      * @param {{created: boolean, keep: boolean}} params keep: ユーザーが「残す」を選んだか
      */
-    async finalize(notebookId, { created, keep }) {
+    async finalize(notebook, { created, keep }) {
       if (!created) {
         return { deleted: false, reason: '既存ノートブックを再利用したため削除確認の対象外' };
       }
       if (keep) {
         return { deleted: false, reason: 'ユーザーが保持を選択' };
       }
-      const result = assertNoError(await cli.deleteNotebook(notebookId), 'delete');
-      return { deleted: true, result };
+      if (!notebook.title?.startsWith(NOTEBOOK_TITLE_PREFIX)) {
+        throw new Error(
+          `安全のため削除を中止: タイトル「${notebook.title}」が命名規則（${NOTEBOOK_TITLE_PREFIX}）と一致しません`
+        );
+      }
+      const result = await cli.deleteNotebook(notebook.id);
+      return { deleted: result.ok, result };
     },
   };
 }
