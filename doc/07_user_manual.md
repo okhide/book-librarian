@@ -100,6 +100,7 @@ node src/build/build.js
    powershell -ExecutionPolicy Bypass -File scripts\create-desktop-shortcut.ps1
    ```
 2. デスクトップに「蔵書AI司書」というショートカットが作成されます。以後はこれをダブルクリックするだけで、このプロジェクトのフォルダでClaude Codeが起動します。
+3. **起動した瞬間に、司書AIが自動的に「何ができるか」のメニュー（蔵書規模・トピック例・聞き方の例）を提示します。** これは`start-librarian.bat`が`claude`起動時にあらかじめ質問文を渡しているためです（`4.2`のヘルプ導線がそのまま起動時に発動する仕組み）。そのまま気になるテーマを続けて話しかけてください。
 
 > 📌 Windowsのスタートメニューにある「Claude」というアプリ（一般的な会話用のClaude Desktop app）からも、フォルダを指定して同じように使えるかは確認できていません。**確実に動作するのは上記のショートカット（Claude Code CLIをこのフォルダで起動する方法）です。**
 
