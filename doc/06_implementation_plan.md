@@ -1,4 +1,4 @@
-# 実装計画
+（# 実装計画
 
 `04_design.md` のPhase 1〜7を、安全に実装できる単位（ステップ）に分解した作業計画。
 
@@ -422,32 +422,49 @@ Step 1.6 で作った試験を、**実際にデータが入った状態で**再�
 
 **ゴール**: 深掘りが必要なとき外部ツールに繋ぐ。
 
-### Step 6.1 BridgeAdapter インターフェース
+Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26）。方針:
 
-- `03_specification.md` の共通インターフェースを実装
-- Obsidian/Anki を後から追加できる形にする（バックログ項目のため実装はしない）
+- ノートブックのタイトルは `蔵書ライブラリ: <テーマ名>` の固定命名規則。`notebooklm list --json` で同一タイトルが既にあれば再利用し、無ければ新規作成する（重複作成防止）。
+- ソース登録も`notebooklm source list --json`で重複チェックしてから追加する。
+- セッション確認は`notebooklm status`、未ログインなら`notebooklm login`を実行する。
+- 登録後はチャット（`notebooklm ask`）による深掘りができるようにする。
+- スタジオ機能はクイズ生成（`generate quiz`）のみ実装。他の種別は同じ仕組みで拡張可能な設計にしておく。
+- **新規作成したノートブックは、利用が一段落したら削除するか残すかを必ずユーザーに確認する。** 既存ノートブックを再利用した場合は確認しない。
+- テストでは実際にnotebooklmを呼ばない（Gemini APIと同じ方針）。CLI呼び出し部分を注入可能にし、単体・機能試験はフェイクの実行結果で検証する。実際の呼び出しは最小限の手動確認に留める。
 
-**機能試験**: ダミーアダプタでインターフェースが機能する。
+### Step 6.1 NotebookLM CLIラッパーとBridgeAdapterインターフェース ✅完了（2026-07-26）
 
-### Step 6.2 NotebookLMアダプタ
+- `src/bridge/notebooklm/cli.js`: `notebooklm`コマンドをシェルアウトで呼ぶ薄いラッパー（auth check/status/list/create/delete/source list/source add/ask/generate quiz/artifact wait/download quiz）。`--json`系はstdoutをJSONとしてパースして返す（notebooklmは認証切れ等のエラー時も終了コード非0＋JSON本文を返すため、execFnの例外を吸収してJSONを取り出す。純粋なJSONで返せない`download quiz`は生のstdout/stderrを返す`runRaw`経路にした）
+- 実行関数（execFn）を注入可能にし、自動テストでは実際の`notebooklm`コマンドを一切呼ばない（Gemini API連携と同じ方針）
+- BridgeAdapter共通インターフェース（`registerBooks`）は`src/bridge/notebooklm/adapter.js`（Step 6.2）で実装する形にした。他アダプタが存在しない現時点で別途インターフェースファイルを設けるのは過剰と判断し、JSDocコメントのみで表現している（実装が増えたら再検討）
+- Obsidian/Anki は追加せず（バックログ項目）
 
-- 既存 `notebooklm` スキル（notebooklm-py CLI）の呼び出し
-- `drive_url` を使った本の登録
-- **登録は必ずユーザー承認後に実行する**（誤登録は外部サービスへの副作用なので慎重に）
+**発見**: 事前スキップした`~/.claude/skills/notebooklm/SKILL.md`のクイックリファレンス表に誤り（`notebook delete <id>`という架空のサブコマンド）があった。実際は`notebooklm delete -n <id>`がトップレベルコマンド。`doc/03_specification.md`・`doc/06_implementation_plan.md`を修正済み。
+**発見**: `notebooklm auth check --json`は認証ファイルの体裁チェックのみで、サーバー側の実際のセッション有効性は判定できない（実際に`list`等を呼ぶまで分からない）。また`notebooklm login`はブラウザでの対話的Google OAuthのため、エージェントが代行実行することはできない。→ユーザーに確認し、アダプタは認証エラーを検知したら「ターミナルで`notebooklm login`を実行してください」と案内して処理を中断する方針で確定（ユーザー承認済み）。
 
-**機能試験**: 少数（2〜3冊）で実際に登録し、結果を確認する。
+**機能試験**: フェイクのexecFnでCLIラッパーの引数構築・JSON解釈・エラー処理を検証（`test/unit/notebooklmCli.test.js`、11件）。
 
-> ⚠ 外部サービスへの書き込みを伴うため、試験は最小限の冊数で行い、事前にユーザーに確認する。
+### Step 6.2 NotebookLMアダプタ（get-or-create・重複防止・チャット・クイズ） ✅完了（2026-07-26）
 
-### Step 6.3 `books.csv` 互換出力
+- `src/bridge/notebooklm/adapter.js`: `checkSession`（ログイン誘導メッセージ生成）、`getOrCreateNotebook`（タイトル一致で再利用/新規作成）、`registerBooksToNotebook`（drive_url/タイトルで重複チェックしてから`addSource`、同一バッチ内の重複も検知）、高レベルの`registerBooks({theme, books})`（セッション確認→get-or-create→登録を一括実行）、`ask`、`generateQuiz`（`--wait`を常に付けて同期完了を待つ設計にし、`artifact wait`の手動ポーリングを不要にした）、`finalize`（新規作成時のみ削除確認対象、既存再利用時は常に`deleted:false`）
+- **実サービスへの登録は必ずユーザー承認後に実行する**（誤登録は外部サービスへの副作用なので慎重に）
+
+**機能試験**: フェイクCLIで、既存タイトルの再利用・新規作成・ソース重複スキップ（既存/同一バッチ内）・エラー伝播・ログイン誘導・finalizeの分岐を検証（`test/functional/notebooklmAdapter.test.js`、14件）。
+**手動確認**: 未実施。実行にはユーザーによる`notebooklm login`が必要（Step 6.1で発見）。ユーザーがログイン後、少数（2〜3冊）で実際にnotebooklmへ登録し、レスポンスの実フィールド名（`list`/`source list`/`addSource`のJSON構造は未ログインのため未確認）を検証する必要がある。
+
+> ⚠ 外部サービスへの書き込みを伴うため、手動確認は最小限の冊数で行い、事前にユーザーに確認する。
+
+### Step 6.3 `books.csv` 互換出力とノートブックの後始末
 
 - 元プロジェクトの `book-ask` スキルと接続可能な列構成（ソース名, ソースID, notebook名, notebookID）で書き出す
+- 新規作成したノートブックについて、削除するか残すかをユーザーに確認する処理を実装（既存ノートブック再利用時は確認しない）
 
-**機能試験**: 出力形式が仕様通り。
+**機能試験**: 出力形式が仕様通り。新規作成時のみ確認が発生し、既存再利用時は発生しないことを確認。
 
 ### Step 6.4 司書スキルからの呼び出し
 
-- UC1（テーマ検索→登録）、UC3（ニッチな話題のフォールバック）、UC4（generate系の加工提案）を通しで実行
+- SKILL.mdにNotebookLM連携の使い方を追記（get-or-create、承認フロー、削除確認）
+- UC1（テーマ検索→登録）、UC3（ニッチな話題のフォールバック）を通しで実行
 
 **回帰試験**: Phase 1〜5 の全試験 ＋ Step 6.1〜6.4
 
@@ -506,9 +523,9 @@ Step 1.6 で作った試験を、**実際にデータが入った状態で**再�
 | 5.2  | 読書状態での絞り込み             |        | ✅完了  |
 | 5.3  | ユーザーデータ保護の再検証 ⚠     |        | ✅完了  |
 | 5.4  | 司書スキルへの統合               |        | ✅完了  |
-| 6.1  | BridgeAdapterインターフェース    |        | 未着手 |
-| 6.2  | NotebookLMアダプタ ⚠外部副作用   |        | 未着手 |
-| 6.3  | `books.csv` 互換出力             |        | 未着手 |
+| 6.1  | NotebookLM CLIラッパー           |        | ✅完了  |
+| 6.2  | NotebookLMアダプタ ⚠外部副作用   |        | 実装完了・実サービス手動確認は未 |
+| 6.3  | 互換出力とノートブック後始末     |        | 未着手 |
 | 6.4  | 司書スキルからの呼び出し         |        | 未着手 |
 | 7.1  | 重複・近重複検知                 |        | 未着手 |
 | 7.2  | 蔵書クラスタリング               | S10    | 未着手 |
@@ -550,3 +567,5 @@ Step 1.6 で作った試験を、**実際にデータが入った状態で**再�
 | 2026-07-25 | 3.6  | Step 3.3のkeyword→topic対応表ではキーワード文字列をキーにしたため、LLMがテキストを書き換えて返す問題が発生した。reader_level補完で同じ問題を避けるため、対応キーをキーワード文字列ではなくbook_id(数値)に変更した                                                                | 数値IDをキーにする設計により、実データ1,980件×20バッチの処理で無効応答0件を実現。文字列キーに起因するデータ不整合を構造的に回避できた                                                                                                                     |
 | 2026-07-26 | 5.3  | ファイル名変更の検知条件を「booksに対応行が存在しない」で実装したところ、実際には検知されなかった。論理削除の設計上、リネームは「旧file_pathの本がstatus='deleted'として存在し続ける」形で観測されるため、単純な不存在チェックでは検知できなかった                              | 判定条件を「対応するbooks行がstatus='deleted'、または一切存在しない」に修正。副産物として通常の論理削除も同じ仕組みで検知できるようになった（reading_statusが実質的に見えなくなる本を包括的に警告できる）                                                 |
 | 2026-07-26 | 5.3  | 実データでフルリビルドを検証中、LLM補完済みのreader_level(1,980件)がフルリビルド後に失われていることを発見。フルリビルドはbooksを全作り直しするためルールベース判定は自動再実行されるが、Step3.6のLLM補完は別スクリプトのため自動では走らない                                  | reading_status(ユーザー所有データ)の損失ではなく派生データの再生成漏れのため実害はないが、運用上の重要な注意点としてbuild.jsに未判定件数の警告を追加。実データはrunReaderLevelLlm.jsを再実行して復元(全2,527件がreader_level設定済みであることを再確認) |
+| 2026-07-26 | 6.1  | `~/.claude/skills/notebooklm/SKILL.md`のクイックリファレンス表に誤りがあり、`notebooklm notebook delete <id>`という存在しないサブコマンドが記載されていた。実CLIの`--help`で確認したところ、`delete`はトップレベルコマンド（`notebooklm delete -n <id>`）だった                     | 判断不要（報告のみ、単純な誤記修正）。`doc/03_specification.md`・`doc/06_implementation_plan.md`の記述を修正                                                                                                                                              |
+| 2026-07-26 | 6.1  | `notebooklm auth check --json`は`status:"ok"`を返しても、実際にAPIを呼ぶと認証切れになるケースがあった（ローカル認証ファイルの体裁チェックのみで、サーバー側の実際の有効性は判定できない）。さらに`notebooklm login`はブラウザでの対話的Google OAuthのため、エージェントが代行実行できない | ユーザーに確認。「難しいなら推奨通りで結構」との回答を得て、アダプタは認証エラーを検知したら`notebooklm login`の実行をユーザーに案内して処理を中断する設計で確定（ログイン自体はユーザー本人が行う） |
