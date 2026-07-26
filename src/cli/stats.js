@@ -5,23 +5,34 @@
 // （意味的な塊への分割。あらかじめ決めたtopicsとは異なる「データ自身の構造」）。
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
+import { parseFlags } from './argParse.js';
 import { getOverallStats } from '../lib/stats.js';
 import { summarizeClusters } from '../lib/clustering.js';
 
-const argv = process.argv.slice(2);
-const json = argv.includes('--json');
-const withClusters = argv.includes('--clusters');
-const kIdx = argv.indexOf('--k');
-const k = kIdx >= 0 ? Number(argv[kIdx + 1]) : 20;
+const SPEC = {
+  json: { flag: '--json', type: 'boolean' },
+  clusters: { flag: '--clusters', type: 'boolean' },
+  k: { flag: '--k', type: 'number' },
+};
 
-const db = new Database(resolveDbPath(), { readonly: true });
-const stats = getOverallStats(db);
-const clusters = withClusters ? summarizeClusters(db, { k }) : null;
-db.close();
+function main() {
+  const { flags } = parseFlags(process.argv.slice(2), SPEC);
+  const k = flags.k ?? 20;
 
-if (json) {
-  console.log(JSON.stringify(clusters ? { ...stats, clusters } : stats, null, 2));
-} else {
+  const db = new Database(resolveDbPath(), { readonly: true });
+  let stats, clusters;
+  try {
+    stats = getOverallStats(db);
+    clusters = flags.clusters ? summarizeClusters(db, { k }) : null;
+  } finally {
+    db.close();
+  }
+
+  if (flags.json) {
+    console.log(JSON.stringify(clusters ? { ...stats, clusters } : stats, null, 2));
+    return;
+  }
+
   console.log('=== 蔵書統計 ===');
   console.log('状態別:');
   for (const { status, count } of stats.statusCounts) {
@@ -46,4 +57,11 @@ if (json) {
       for (const b of c.representativeBooks) console.log(`  - ${b.title}`);
     }
   }
+}
+
+try {
+  main();
+} catch (err) {
+  console.error(`エラー: ${err.message}`);
+  process.exitCode = 1;
 }

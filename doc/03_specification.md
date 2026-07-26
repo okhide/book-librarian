@@ -486,15 +486,20 @@ FTS5を採用しないことで、当初懸念していた「外部コンテン�
 
 ## 橋渡し（ブリッジ）層の仕様
 
-### 共通インターフェース（案）
+### 共通インターフェース（Step 6.2で確定した実装形）
 
 ```ts
 interface BridgeAdapter {
   name: string;                     // "notebooklm" 等
-  registerBooks(books: Book[]): Promise<RegisterResult>;
+  registerBooks(params: { theme: string; books: Book[] }): Promise<RegisterResult>;
   // 必要に応じて ask / generate 等、ツール固有の操作を追加
 }
 ```
+
+`theme`（テーマ名）を追加した理由: notebooklmアダプタでは、登録先ノートブックをテーマ名から
+決まる命名規則（`蔵書ライブラリ: <テーマ名>`）で解決するため、単なる本の配列だけでは
+「どのノートブックに登録するか」を表現できない。当初案の`registerBooks(books)`から、
+実装時にこの形へ変更した（`src/bridge/notebooklm/adapter.js`参照）。
 
 各アダプタは `src/bridge/<tool>/` に配置し、司書AI（librarianスキル）から共通インターフェース越しに呼び出す。
 
@@ -510,8 +515,9 @@ interface BridgeAdapter {
 
 **ソースの登録（本の重複登録防止も兼ねる）:**
 
-- 本の登録は `drive_url` を `notebooklm source add` に渡す形。
-- 登録前に `notebooklm source list --json` で対象ノートブックの既存ソースを確認し、同じ本（`drive_url`または完全一致するタイトル）が既にあれば再登録しない（スキップ）。
+- 当初案は`drive_url`を汎用の`notebooklm source add --type url`に渡す形だったが、**実装時にGoogleのボット検出（CAPTCHA）に阻まれ、内容を正しく読み込めないことが判明した**（登録自体はエラーを返さないため、この失敗はプログラム的に検知できない）。
+- **実際の実装**: `drive_url`（`https://drive.google.com/file/d/<FILE_ID>/view?...`）からファイルIDを抽出し、Drive API認証アクセスを使う専用コマンド`notebooklm source add-drive <FILE_ID> <title> --mime-type pdf`で登録する（`src/bridge/notebooklm/adapter.js`の`extractDriveFileId`/`registerBooksToNotebook`参照）。
+- 登録前に`notebooklm source list --json`で対象ノートブックの既存ソースを確認し、本の`title`と完全一致するタイトルのソースが既にあれば再登録しない（スキップ）。**制約**: `source add-drive`成功時、ソースのタイトルは指定値ではなくGoogle Drive側のメタデータで上書きされ、かつDriveのファイルID自体は`source list`のレスポンスに含まれないため、この重複判定は近似的なもの（Driveのファイル名がこちらの`title`と異なる場合は重複を見逃す可能性があるが、実害は再登録の冗長さのみでデータ破壊は無い）。
 
 **セッション確認:**
 

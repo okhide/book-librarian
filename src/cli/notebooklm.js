@@ -10,27 +10,31 @@
 // （このCLIはプロセスをまたいだ状態を持たない）。
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
+import { parseFlags } from './argParse.js';
 import { createNotebookLmCli } from '../bridge/notebooklm/cli.js';
 import { createNotebookLmAdapter } from '../bridge/notebooklm/adapter.js';
 
+const SPEC = {
+  json: { flag: '--json', type: 'boolean' },
+  theme: { flag: '--theme', type: 'string' },
+  ids: { flag: '--ids', type: 'numberList' },
+  notebook: { flag: '--notebook', type: 'string' },
+  title: { flag: '--title', type: 'string' },
+  created: { flag: '--created', type: 'string' },
+  keep: { flag: '--keep', type: 'string' },
+  quantity: { flag: '--quantity', type: 'string' },
+  difficulty: { flag: '--difficulty', type: 'string' },
+};
+
 function parseArgs(argv) {
-  const args = { json: false, ids: [] };
-  const rest = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--json') args.json = true;
-    else if (a === '--theme') args.theme = argv[++i];
-    else if (a === '--ids') args.ids = argv[++i].split(',').map(Number);
-    else if (a === '--notebook') args.notebook = argv[++i];
-    else if (a === '--title') args.title = argv[++i];
-    else if (a === '--created') args.created = argv[++i] === 'true';
-    else if (a === '--keep') args.keep = argv[++i] === 'true';
-    else if (a === '--quantity') args.quantity = argv[++i];
-    else if (a === '--difficulty') args.difficulty = argv[++i];
-    else rest.push(a);
-  }
-  args.command = rest[0];
-  args.text = rest[1];
+  const { flags, positional } = parseFlags(argv, SPEC);
+  const args = { json: false, ids: [], ...flags };
+  // --created/--keepは"true"/"false"の文字列で渡される（真偽値そのものではない）ため、
+  // 未指定(undefined)とfalseを区別できるようここで変換する
+  if (args.created !== undefined) args.created = args.created === 'true';
+  if (args.keep !== undefined) args.keep = args.keep === 'true';
+  args.command = positional[0];
+  args.text = positional[1];
   return args;
 }
 
@@ -42,10 +46,9 @@ const USAGE = [
   '  node src/cli/notebooklm.js finalize --notebook <id> --title "<title>" --created <true|false> --keep <true|false> [--json]',
 ].join('\n');
 
-const args = parseArgs(process.argv.slice(2));
 const adapter = createNotebookLmAdapter(createNotebookLmCli());
 
-async function runRegister() {
+async function runRegister(args) {
   if (!args.theme || args.ids.length === 0) {
     console.error(USAGE);
     process.exitCode = 1;
@@ -73,7 +76,7 @@ async function runRegister() {
   if (!result.ok) process.exitCode = 1;
 }
 
-async function runAsk() {
+async function runAsk(args) {
   if (!args.notebook || !args.text) {
     console.error(USAGE);
     process.exitCode = 1;
@@ -84,7 +87,7 @@ async function runAsk() {
   else console.log(result.answer);
 }
 
-async function runQuiz() {
+async function runQuiz(args) {
   if (!args.notebook) {
     console.error(USAGE);
     process.exitCode = 1;
@@ -95,7 +98,7 @@ async function runQuiz() {
   else console.log(`クイズ生成: ${result.status}（task_id: ${result.task_id}）`);
 }
 
-async function runFinalize() {
+async function runFinalize(args) {
   if (!args.notebook || !args.title || args.created == null || args.keep == null) {
     console.error(USAGE);
     process.exitCode = 1;
@@ -110,10 +113,11 @@ async function runFinalize() {
 }
 
 try {
-  if (args.command === 'register') await runRegister();
-  else if (args.command === 'ask') await runAsk();
-  else if (args.command === 'quiz') await runQuiz();
-  else if (args.command === 'finalize') await runFinalize();
+  const args = parseArgs(process.argv.slice(2));
+  if (args.command === 'register') await runRegister(args);
+  else if (args.command === 'ask') await runAsk(args);
+  else if (args.command === 'quiz') await runQuiz(args);
+  else if (args.command === 'finalize') await runFinalize(args);
   else {
     console.error(USAGE);
     process.exitCode = 1;

@@ -3,28 +3,36 @@
 // summary_longを無加工で全文出力する（切り詰め・要約は一切行わない）。
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
+import { parseFlags } from './argParse.js';
 
-const argv = process.argv.slice(2);
-const json = argv.includes('--json');
-const idArg = argv.find((a) => !a.startsWith('--'));
+const SPEC = { json: { flag: '--json', type: 'boolean' } };
+const USAGE = '使い方: node src/cli/show.js <id> [--json]';
 
-if (!idArg) {
-  console.error('使い方: node src/cli/show.js <id> [--json]');
-  process.exitCode = 1;
-} else {
-  const db = new Database(resolveDbPath(), { readonly: true });
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(Number(idArg));
+function main() {
+  const { flags, positional } = parseFlags(process.argv.slice(2), SPEC);
+  const idArg = positional[0];
 
-  if (!book) {
-    console.error(`id=${idArg} の本が見つかりません`);
+  if (!idArg) {
+    console.error(USAGE);
     process.exitCode = 1;
-  } else {
+    return;
+  }
+
+  const db = new Database(resolveDbPath(), { readonly: true });
+  try {
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(Number(idArg));
+    if (!book) {
+      console.error(`id=${idArg} の本が見つかりません`);
+      process.exitCode = 1;
+      return;
+    }
+
     const keywords = db
       .prepare('SELECT keyword FROM book_keywords WHERE book_id = ?')
       .all(book.id)
       .map((r) => r.keyword);
 
-    if (json) {
+    if (flags.json) {
       console.log(JSON.stringify({ ...book, keywords }, null, 2));
     } else {
       console.log(`【${book.title}】`);
@@ -36,7 +44,14 @@ if (!idArg) {
       console.log('');
       console.log(book.summary_long);
     }
+  } finally {
+    db.close();
   }
+}
 
-  db.close();
+try {
+  main();
+} catch (err) {
+  console.error(`エラー: ${err.message}`);
+  process.exitCode = 1;
 }

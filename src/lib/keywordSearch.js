@@ -3,6 +3,7 @@
 // 2,527行11MB）は想定（約100ms）より速く、この規模では十分な性能。
 // ランキングの重みは実装時の初期値であり、実データで随時調整してよい
 // （doc/03_specification.md「ランキング」に「仕様として固定しない」と明記）。
+import { buildBookFilterConditions } from './bookFilters.js';
 
 const WEIGHTS = {
   title: 100,
@@ -68,28 +69,9 @@ export function searchByKeyword(db, queryText, options = {}) {
   const queryLower = queryText.toLowerCase();
   const placeholders = includeStatuses.map(() => '?').join(',');
 
-  const conditions = [`search_text LIKE ?`, `status IN (${placeholders})`];
-  const params = [`%${queryLower}%`, ...includeStatuses];
-  if (year != null) {
-    conditions.push('publication_year = ?');
-    params.push(year);
-  }
-  if (category != null) {
-    conditions.push('category_raw = ?');
-    params.push(category);
-  }
-  if (level != null) {
-    conditions.push('reader_level = ?');
-    params.push(level);
-  }
-  if (topic != null) {
-    conditions.push('id IN (SELECT book_id FROM book_topics WHERE topic = ?)');
-    params.push(topic);
-  }
-  if (unreadOnly) {
-    // 未読 = reading_statusが無い、またはstatus='unread'（既読・読書中・中断は除外）
-    conditions.push(`file_path NOT IN (SELECT file_path FROM reading_status WHERE status != 'unread')`);
-  }
+  const filter = buildBookFilterConditions({ year, category, topic, level, unreadOnly });
+  const conditions = [`search_text LIKE ?`, `status IN (${placeholders})`, ...filter.conditions];
+  const params = [`%${queryLower}%`, ...includeStatuses, ...filter.params];
 
   const rows = db.prepare(`SELECT * FROM books WHERE ${conditions.join(' AND ')}`).all(...params);
 

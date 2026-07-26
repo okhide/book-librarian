@@ -58,4 +58,11 @@
 
 ## 元プロジェクトとの接続（任意）
 
-- 将来、NotebookLM登録プログラムを実装する際、登録結果を元プロジェクト側の `C:\Users\okada\src\notebook\books.csv` と同じ列構成（ソース名, ソースID, notebook名, notebookID）で書き出せば、元プロジェクトの `book-ask` スキルからも同じ登録済み本を参照できる。必須ではないが、フォーマットを合わせておくと二重管理を避けられる。
+- Phase 6 Step 6.3で、元プロジェクト側の`C:\Users\okada\src\notebook\books.csv`と同じ列構成（ソース名, ソースID, notebook名, notebookID）でCSV行を生成する関数（`src/bridge/notebooklm/booksCsv.js`）は実装済み。**ただし実際にそのファイルへ書き出す／既存内容とマージする接続部分は未実装**（今回のフェーズでは「フォーマットの用意」のみが要件だった）。実際に`book-ask`スキルと連携したくなった時点で、書き出し先ファイルの読み込み・重複排除・追記のロジックを追加する。
+
+## v1.0.0リリース時のコードレビューで見つかった項目
+
+- **新規インストール時のデータ依存**: `data/output_data/`・`data/蔵書リスト.csv`（読み取り専用ジャンクション/ハードリンク）・`data/topic_mapping.json`（Gemini APIで自動生成、`.gitignore`対象）はいずれもGitHubには含まれない。GitHubから新規に`git clone`した第三者がこのプロジェクトを動かすには、(1)同形式の要約データを別途用意し、(2)`node src/build/runTopicMapping.js`でトピック対応表をGemini APIで再生成する必要がある。将来的に、小さなサンプルデータセット（数十冊程度のダミー要約）を同梱し、「まず動かして体験できる」オンボーディングを用意すると親切かもしれない。
+- **`src/build/run*.js`系スクリプトの共通化**: `runApplyTopics.js`/`runReaderLevelLlm.js`/`runTaxonomyDraft.js`/`runTopicMapping.js`は「設定ファイルを読む→DBを開く→本処理を実行→結果を表示する」という同じ形を繰り返している。各ファイルが20〜40行程度と小さく、現時点では共通化による恩恵よりも抽象化のコストが大きいと判断して見送ったが、スクリプトの数が今後さらに増える場合は共通の実行スキャフォールドを検討する。
+- **`findPendingBookByMdFilename`のスキャン方式**: 差分更新で新規ファイルを検出する際、`pending`行を毎回SELECTし直して線形探索している（`src/build/persist.js`）。2,527冊規模では実害はないが、`pending`件数や新規ファイル数が大きく増えた場合は、`existingByFilePath`と同様に事前にMapを1回構築する方式に変更する。
+- **感度調整パラメータのプリセット化**: `search --vector-threshold`・`duplicates --threshold`・`stats --clusters --k`は現時点ではCLIの引数で手動調整する形のみ。「厳しめ/標準/緩め」のようなプリセット名で指定できるようにすると、PC初心者にはより親切になる可能性がある。

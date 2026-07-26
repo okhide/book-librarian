@@ -11,31 +11,29 @@
 //   作る際に使う。
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './dbPath.js';
+import { parseFlags } from './argParse.js';
 import { createEmbedder } from '../lib/embed.js';
 import { hybridSearch } from '../lib/hybridSearch.js';
 import { capResultsByCharBudget, DEFAULT_MAX_COUNT } from '../lib/bulkSummary.js';
 
+const SPEC = {
+  json: { flag: '--json', type: 'boolean' },
+  dataIssues: { flag: '--data-issues', type: 'boolean' },
+  withSummary: { flag: '--with-summary', type: 'boolean' },
+  limit: { flag: '--limit', type: 'number' },
+  year: { flag: '--year', type: 'number' },
+  category: { flag: '--category', type: 'string' },
+  topic: { flag: '--topic', type: 'string' },
+  level: { flag: '--level', type: 'string' },
+  unreadOnly: { flag: '--unread', type: 'boolean' },
+  vectorHitThreshold: { flag: '--vector-threshold', type: 'number' },
+};
+
 function parseArgs(argv) {
-  const args = { limit: 20, json: false, dataIssues: false, withSummary: false, limitExplicit: false };
-  const rest = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--json') args.json = true;
-    else if (a === '--data-issues') args.dataIssues = true;
-    else if (a === '--with-summary') args.withSummary = true;
-    else if (a === '--limit') {
-      args.limit = Number(argv[++i]);
-      args.limitExplicit = true;
-    } else if (a === '--year') args.year = Number(argv[++i]);
-    else if (a === '--category') args.category = argv[++i];
-    else if (a === '--topic') args.topic = argv[++i];
-    else if (a === '--level') args.level = argv[++i];
-    else if (a === '--unread') args.unreadOnly = true;
-    else if (a === '--vector-threshold') args.vectorHitThreshold = Number(argv[++i]);
-    else rest.push(a);
-  }
-  if (args.withSummary && !args.limitExplicit) args.limit = DEFAULT_MAX_COUNT;
-  args.query = rest.join(' ');
+  const { flags, positional } = parseFlags(argv, SPEC);
+  const args = { limit: 20, json: false, dataIssues: false, withSummary: false, ...flags };
+  if (args.withSummary && flags.limit === undefined) args.limit = DEFAULT_MAX_COUNT;
+  args.query = positional.join(' ');
   return args;
 }
 
@@ -97,52 +95,59 @@ function printResults(query, totalCount, results, json, truncated) {
   });
 }
 
+const USAGE =
+  '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--topic T] [--level L] [--unread] [--vector-threshold T] [--json] [--data-issues]';
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const db = new Database(resolveDbPath(), { readonly: true });
 
-  if (args.dataIssues) {
-    const rows = db
-      .prepare(
-        `SELECT id, title, title_is_fallback, summary_long_is_fallback FROM books
-         WHERE status = 'summarized' AND (title_is_fallback = 1 OR summary_long_is_fallback = 1)`
-      )
-      .all();
-    printDataIssues(rows, args.json);
+  try {
+    if (args.dataIssues) {
+      const rows = db
+        .prepare(
+          `SELECT id, title, title_is_fallback, summary_long_is_fallback FROM books
+           WHERE status = 'summarized' AND (title_is_fallback = 1 OR summary_long_is_fallback = 1)`
+        )
+        .all();
+      printDataIssues(rows, args.json);
+      return;
+    }
+
+    if (!args.query) {
+      console.error(USAGE);
+      process.exitCode = 1;
+      return;
+    }
+
+    const extractor = await createEmbedder();
+    const { totalCount, results } = await hybridSearch(db, extractor, args.query, {
+      limit: args.limit,
+      year: args.year,
+      category: args.category,
+      topic: args.topic,
+      level: args.level,
+      unreadOnly: args.unreadOnly,
+      vectorHitThreshold: args.vectorHitThreshold,
+    });
+
+    let finalResults = results;
+    let truncated = false;
+    if (args.withSummary) {
+      const capped = capResultsByCharBudget(results);
+      finalResults = capped.results;
+      truncated = capped.truncated;
+    }
+
+    printResults(args.query, totalCount, finalResults, args.json, truncated);
+  } finally {
     db.close();
-    return;
   }
-
-  if (!args.query) {
-    console.error(
-      '使い方: node src/cli/search.js "<検索語>" [--limit N] [--year Y] [--category C] [--topic T] [--level L] [--unread] [--vector-threshold T] [--json] [--data-issues]'
-    );
-    process.exitCode = 1;
-    db.close();
-    return;
-  }
-
-  const extractor = await createEmbedder();
-  const { totalCount, results } = await hybridSearch(db, extractor, args.query, {
-    limit: args.limit,
-    year: args.year,
-    category: args.category,
-    topic: args.topic,
-    level: args.level,
-    unreadOnly: args.unreadOnly,
-    vectorHitThreshold: args.vectorHitThreshold,
-  });
-
-  let finalResults = results;
-  let truncated = false;
-  if (args.withSummary) {
-    const capped = capResultsByCharBudget(results);
-    finalResults = capped.results;
-    truncated = capped.truncated;
-  }
-
-  printResults(args.query, totalCount, finalResults, args.json, truncated);
-  db.close();
 }
 
-main();
+try {
+  await main();
+} catch (err) {
+  console.error(`エラー: ${err.message}`);
+  process.exitCode = 1;
+}

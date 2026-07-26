@@ -4,6 +4,7 @@
 // コサイン類似度は内積だけで計算できる。
 import { blobToFloatArray } from './vectorBlob.js';
 import { embedText, toQueryText } from './embed.js';
+import { buildBookFilterConditions } from './bookFilters.js';
 
 function dot(a, b) {
   let s = 0;
@@ -22,27 +23,9 @@ function dot(a, b) {
 export function loadAllEmbeddings(db, options = {}) {
   const { includeStatuses = ['summarized'], year, category, topic, level, unreadOnly } = options;
   const placeholders = includeStatuses.map(() => '?').join(',');
-  const conditions = [`b.status IN (${placeholders})`];
-  const params = [...includeStatuses];
-  if (year != null) {
-    conditions.push('b.publication_year = ?');
-    params.push(year);
-  }
-  if (category != null) {
-    conditions.push('b.category_raw = ?');
-    params.push(category);
-  }
-  if (level != null) {
-    conditions.push('b.reader_level = ?');
-    params.push(level);
-  }
-  if (topic != null) {
-    conditions.push('b.id IN (SELECT book_id FROM book_topics WHERE topic = ?)');
-    params.push(topic);
-  }
-  if (unreadOnly) {
-    conditions.push(`b.file_path NOT IN (SELECT file_path FROM reading_status WHERE status != 'unread')`);
-  }
+  const filter = buildBookFilterConditions({ prefix: 'b.', year, category, topic, level, unreadOnly });
+  const conditions = [`b.status IN (${placeholders})`, ...filter.conditions];
+  const params = [...includeStatuses, ...filter.params];
 
   return db
     .prepare(

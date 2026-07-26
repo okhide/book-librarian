@@ -124,6 +124,23 @@ test('CLI', async (t) => {
     assert.ok(parsed.some((t) => t.topic === '会計・財務' && t.count === 1));
   });
 
+  await t.test('duplicates: 閾値を極端に低くすると全ペアが候補になる', () => {
+    const output = runCli('src/cli/duplicates.js', ['--threshold', '-1', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.threshold, -1);
+    assert.ok(parsed.count > 0);
+    assert.ok(parsed.pairs.every((p) => typeof p.titleA === 'string' && typeof p.titleB === 'string'));
+  });
+
+  await t.test('duplicates: --thresholdに非数値を渡すとエラー終了する（NaNが黙って通らない）', () => {
+    assert.throws(() => runCli('src/cli/duplicates.js', ['--threshold', 'abc'], dbPath));
+  });
+
+  await t.test('notebooklm: 引数不足時はエラー終了し、使い方を表示する（実サービスは呼ばない）', () => {
+    assert.throws(() => runCli('src/cli/notebooklm.js', ['register'], dbPath));
+    assert.throws(() => runCli('src/cli/notebooklm.js', [], dbPath));
+  });
+
   await t.test('search --with-summary: returnedCount/matchedByKeywordCount/truncatedを含み、全件summaryShortを持つ', () => {
     const output = runCli('src/cli/search.js', ['会計', '--with-summary', '--json'], dbPath);
     const parsed = JSON.parse(output);

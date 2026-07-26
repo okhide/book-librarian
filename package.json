@@ -1,6 +1,6 @@
 {
   "name": "book-librarian",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "蔵書要約データベース化＋司書AIツール",
   "type": "module",
   "private": true,

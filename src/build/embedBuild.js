@@ -4,7 +4,7 @@
 // - updateBook()はembed_source_hashが変わった本だけembed_embeddingsの行を削除するため、
 //   実質的な内容変更が無い更新では既存の埋め込みが温存される
 import { buildEmbedSourceText } from '../lib/text.js';
-import { createEmbedder, embedText, toPassageText, DEFAULT_MODEL, EMBEDDING_DIM } from '../lib/embed.js';
+import { embedText, toPassageText, DEFAULT_MODEL } from '../lib/embed.js';
 import { floatArrayToBlob } from '../lib/vectorBlob.js';
 import { getKeywordsForBook, getTopicsForBook } from './persist.js';
 
@@ -53,5 +53,3 @@ export async function generateMissingEmbeddings(db, extractor, options = {}) {
 
   return { generated, total: candidates.length };
 }
-
-export { createEmbedder, EMBEDDING_DIM };

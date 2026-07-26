@@ -2,23 +2,29 @@
 
 このプロジェクトは、蔵書要約データ（`data/output_data/`）を検索可能なデータベース化し、AIが「司書・メンター」として振る舞い、ユーザーの学習を支援するためのツールです。
 
+## 現在の状態
+
+v1.0.0リリース済み。`doc/06_implementation_plan.md`の実装計画（Phase 1〜7）は全ステップ完了している。以降の作業（機能追加・バグ修正等）でも、同ファイルの「進め方の原則」（ステップバイステップ・spike先行・テスト必須・気づきの報告）は引き続き適用する。
+
 ## まず読むべきドキュメント
 
-実装を始める前に、必ず `doc/` 配下を順番に読んでください。
+作業を始める前に、必ず `doc/` 配下を確認してください。
 
 1. `doc/01_requirements.md` — 要求
 2. `doc/02_use_cases.md` — ユースケース（AIペルソナ設定・プロンプト・具体例）
 3. `doc/03_specification.md` — 仕様（データ構造・DBスキーマ・橋渡しインターフェース）
 4. `doc/04_design.md` — 設計方針（技術スタック・フォルダ構成・開発手順）
-5. `doc/05_backlog.md` — 今回スコープ外の保留事項
-6. `doc/06_implementation_plan.md` — **実装計画**（ステップ分解・テスト戦略・spike運用）
+5. `doc/05_backlog.md` — スコープ外の保留事項
+6. `doc/06_implementation_plan.md` — **実装計画**（ステップ分解・テスト戦略・spike運用・気づきと決定の記録）
+7. `doc/07_user_manual.md` — ユーザーマニュアル（PC初心者向け・インストール〜使い方〜メンテナンス）
+8. `doc/08_technical_overview.md` — 技術説明（DB設計・skill設計のポイント）
 
 ## データについて
 
 - `data/output_data/` は元プロジェクト（`C:\Users\okada\src\20260702_summarize_book_with_gemini\output_data`）へのディレクトリジャンクションです。**読み取り専用**として扱ってください（書き込み・削除しない）。
 - `data/蔵書リスト.csv` は同プロジェクトのCSVへのハードリンクです。同じく読み取り専用。
-- 元プロジェクトのコード（index.js/lib/gui等）はこのプロジェクトでは**再利用しません**。今回は一から実装します。
-- `data/db/library.db` はこのプロジェクトが生成するSQLiteデータベースです（未生成）。
+- 元プロジェクトのコード（index.js/lib/gui等）はこのプロジェクトでは**再利用しません**。一から実装しています。
+- `data/db/library.db` はこのプロジェクトが生成するSQLiteデータベースです（`node src/build/build.js`で生成済み。`.gitignore`対象のためGitHub上には存在しない）。
 
 ## 会話のルール
 

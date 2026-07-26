@@ -16,8 +16,9 @@ import { generateMissingEmbeddings } from './embedBuild.js';
 import { applyTopicsToAllBooks } from './applyTopics.js';
 import { applyReaderLevelRules } from './readerLevel.js';
 import { findOrphanedReadingStatus } from '../lib/readingStatus.js';
+import { resolveDbPath } from '../cli/dbPath.js';
 
-const DB_PATH = path.resolve('data/db/library.db');
+const DB_PATH = resolveDbPath();
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
 const CSV_PATH = path.resolve('data/蔵書リスト.csv');
 const TAXONOMY_PATH = path.resolve('data/topic_taxonomy.json');

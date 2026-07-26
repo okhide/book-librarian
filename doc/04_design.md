@@ -33,43 +33,55 @@
 
 ## フォルダ構成
 
+> 📝 以下は開発着手前に立てた**当初案**（この節の元の内容）ではなく、実装完了時点（v1.0.0）の
+> 実際の構成に更新したもの。当初案からの主な変更点は、ファイル単位がより細かく分かれたこと
+> （例: `build/topics.js`という1ファイル構想は、実際には`topicVocab.js`/`topicTaxonomyDraft.js`/
+> `topicMapping.js`/`applyTopics.js`＋各`run*.js`実行スクリプトに分かれた）と、
+> Phase 6・7で`src/bridge/notebooklm/`・重複検知・クラスタリングが追加されたこと。
+
 ```
 20260725_book_librarian/
   data/
     output_data/           # ジャンクション → 元プロジェクトのoutput_data （読み取り専用）
     蔵書リスト.csv           # ハードリンク → 元プロジェクトのCSV （読み取り専用）
-    topic_taxonomy.json    # トピック分類表（80〜150項目）★ユーザーが手編集する・git管理対象
-    topic_overrides.json   # keyword→topicの例外指定（数十件）★ユーザーが手編集する・git管理対象
-    topic_mapping.json     # keyword→topic対応表（約8,780件）自動生成物
+    topic_taxonomy.json    # トピック分類表（約25項目）★ユーザーが手編集する・git管理対象
+    topic_overrides.json   # keyword→topicの例外指定 ★ユーザーが手編集する・git管理対象
+    topic_mapping.json     # keyword→topic対応表（約8,780件）自動生成物・.gitignore対象
     db/
       library.db           # 生成物（.gitignore対象）
     models/                # ダウンロードした埋め込みモデルのキャッシュ（.gitignore対象）
   src/
-    build/                 # DB構築・差分更新スクリプト
-      parse.js             #   Markdownパーサー
-      embed.js             #   埋め込み生成
-      topics.js            #   トピック分類表の適用・対応表生成
-      level.js             #   reader_level判定（ルール＋LLM）
+    build/                 # DB構築・差分更新・トピック/reader_level分類スクリプト
+      parse.js / persist.js / fullBuild.js / fullRebuild.js / diffUpdate.js
+      csv.js / reconcileCsv.js         # 蔵書リスト.csvの取り込み・突き合わせ
+      embedBuild.js                    # 埋め込み生成
+      topicVocab.js / topicTaxonomyDraft.js / topicMapping.js / applyTopics.js
+      readerLevel.js / readerLevelLlm.js
+      build.js                         # メインの実行スクリプト（初回/差分/フルリビルド）
+      run{TaxonomyDraft,TopicMapping,ApplyTopics,ReaderLevelLlm}.js  # 個別実行用スクリプト
     lib/                   # 共有ライブラリ（CLI/将来のMCP双方から利用）
-      search.js            #   ハイブリッド検索
-      vector.js            #   ベクトルのロードと総当たり類似度計算
-      db.js                #   DB接続・スキーマ
-    cli/                   # CLIコマンド（search / show / similar / topics / stats / read）
+      schema.js / hash.js / text.js / vectorBlob.js
+      keywordSearch.js / vectorSearch.js / hybridSearch.js / bookFilters.js
+      embed.js / gemini.js / bulkSummary.js / stats.js / readingStatus.js
+      duplicateDetection.js / clustering.js
+    cli/                   # CLIコマンド
+      dbPath.js / argParse.js（共通ヘルパー）
+      search.js / show.js / similar.js / topics.js / stats.js / read.js
+      duplicates.js / notebooklm.js
     bridge/
-      notebooklm/          # NotebookLM橋渡しアダプタ
-      obsidian/            # （将来）
-      anki/                # （将来）
+      notebooklm/          # NotebookLM橋渡しアダプタ（cli.js / adapter.js / booksCsv.js）
     librarian/             # 司書AIのペルソナ定義・プロンプト・スキル定義（正本）
                            # .claude/skills/book-librarian/SKILL.md に同一内容のコピーを
                            # 置く必要がある（Claude Codeが実際にスキルとして発見・起動する
                            # のはこちらのパスのため）。test/unit/skillDoc.test.js で
                            # 両者の一致を検証している
   doc/
-    01_requirements.md
-    02_use_cases.md
-    03_specification.md
-    04_design.md
-    05_backlog.md
+    01_requirements.md / 02_use_cases.md / 03_specification.md / 04_design.md
+    05_backlog.md / 06_implementation_plan.md
+    07_user_manual.md      # PC初心者向けユーザーマニュアル
+    08_technical_overview.md  # 技術説明（設計のポイント）
+  spike/                   # 事前検証スクリプト（本体へは移植しない。決定の根拠として残す）
+  test/                    # unit / functional / integration / performance
   CLAUDE.md
   .gitignore
 ```
