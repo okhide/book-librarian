@@ -464,12 +464,12 @@ Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26
 
 > ⚠ 外部サービスへの書き込みを伴うため、手動確認は最小限の冊数で行い、事前にユーザーに確認する。
 
-### Step 6.3 `books.csv` 互換出力とノートブックの後始末
+### Step 6.3 `books.csv` 互換出力とノートブックの後始末 ✅完了（2026-07-26）
 
-- 元プロジェクトの `book-ask` スキルと接続可能な列構成（ソース名, ソースID, notebook名, notebookID）で書き出す
-- 新規作成したノートブックについて、削除するか残すかをユーザーに確認する処理を実装（既存ノートブック再利用時は確認しない）
+- `src/bridge/notebooklm/booksCsv.js`: `~/.claude/skills/book-ask/SKILL.md`が読み込む実際の`books.csv`形式（`C:\Users\okada\src\notebook\books.csv`、UTF-8 BOM付き、列: ソース名,ソースID,notebook名,notebookID、CRLF）を確認し、互換のCSV行/テキストを生成する`toBooksCsvRows`/`formatBooksCsv`を実装した。今回のフェーズでは実ファイルへの書き出し（接続）までは行わず、フォーマットの用意のみ（当初の想定どおり接続必須ではない）
+- 「新規作成したノートブックのみ削除確認」は、Step 6.2で実装済みの`registerBooks`が返す`created`フラグと`finalize(notebook, {created, keep})`で既に満たされている（`registerBooks`の呼び出し側が`result.created`を見て確認の要否を判断し、`keep`の値を`finalize`に渡すだけで良い設計）。追加の実装は不要と判断した
 
-**機能試験**: 出力形式が仕様通り。新規作成時のみ確認が発生し、既存再利用時は発生しないことを確認。
+**機能試験**: `toBooksCsvRows`がstatus='added'のみを行に変換すること、`formatBooksCsv`がbook-ask互換のヘッダー・BOM・CRLF・CSVエスケープで出力することを検証（`test/unit/notebooklmBooksCsv.test.js`、4件）。
 
 ### Step 6.4 司書スキルからの呼び出し
 
@@ -535,7 +535,7 @@ Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26
 | 5.4  | 司書スキルへの統合               |        | ✅完了  |
 | 6.1  | NotebookLM CLIラッパー           |        | ✅完了  |
 | 6.2  | NotebookLMアダプタ ⚠外部副作用   |        | ✅完了  |
-| 6.3  | 互換出力とノートブック後始末     |        | 未着手 |
+| 6.3  | 互換出力とノートブック後始末     |        | ✅完了  |
 | 6.4  | 司書スキルからの呼び出し         |        | 未着手 |
 | 7.1  | 重複・近重複検知                 |        | 未着手 |
 | 7.2  | 蔵書クラスタリング               | S10    | 未着手 |
