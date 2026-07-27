@@ -188,6 +188,58 @@ test('CLI', async (t) => {
     assert.equal(totalSize, 6);
   });
 
+  await t.test('enrich review: レビュー待ちの本が一覧できる', () => {
+    const db = new Database(dbPath);
+    db.prepare("UPDATE books SET enrichment_status = 'needs_review' WHERE id = ?").run(normalBookId);
+    db.prepare(
+      `INSERT INTO enrichment_candidates (file_path, status, source, candidate_count, conflicting_ndc, created_at)
+       VALUES ('normal_book.md', 'needs_review', 'ndl_title', 2, '["159","336"]', '2026-01-01')`
+    ).run();
+    db.close();
+
+    const output = runCli('src/cli/enrich.js', ['review', '--json'], dbPath);
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.length, 1);
+    assert.equal(parsed[0].book_id, normalBookId);
+    assert.equal(parsed[0].candidate_count, 2);
+  });
+
+  await t.test('enrich resolve: 手動確定するとレビュー一覧から消える', () => {
+    runCli('src/cli/enrich.js', ['resolve', '--id', String(normalBookId), '--isbn', '9784000000000', '--ndc', '159'], dbPath);
+
+    const reviewOutput = runCli('src/cli/enrich.js', ['review', '--json'], dbPath);
+    assert.deepEqual(JSON.parse(reviewOutput), []);
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.prepare('SELECT * FROM books WHERE id = ?').get(normalBookId);
+    assert.equal(row.enriched_isbn, '9784000000000');
+    assert.equal(row.enriched_source, 'manual');
+    db.close();
+  });
+
+  await t.test('enrich resolve: --isbnが無くても--ndcだけで確定できる', () => {
+    const db = new Database(dbPath);
+    db.prepare("UPDATE books SET enrichment_status = 'needs_review' WHERE id = ?").run(normalBookId);
+    db.prepare(
+      `INSERT INTO enrichment_candidates (file_path, status, source, candidate_count, conflicting_ndc, created_at)
+       VALUES ('normal_book.md', 'needs_review', 'ndl_title', 2, '["159","336"]', '2026-01-01')`
+    ).run();
+    db.close();
+
+    runCli('src/cli/enrich.js', ['resolve', '--id', String(normalBookId), '--ndc', '141.62'], dbPath);
+
+    const checkDb = new Database(dbPath, { readonly: true });
+    const row = checkDb.prepare('SELECT * FROM books WHERE id = ?').get(normalBookId);
+    assert.equal(row.enriched_isbn, null);
+    assert.equal(row.enriched_ndc, '141.62');
+    assert.equal(row.enrichment_status, 'matched');
+    checkDb.close();
+  });
+
+  await t.test('enrich resolve: --isbn/--ndcどちらも無ければエラー終了する', () => {
+    assert.throws(() => runCli('src/cli/enrich.js', ['resolve', '--id', String(normalBookId)], dbPath));
+  });
+
   t.after(() => {
     fs.rmSync(dbPath, { force: true });
   });

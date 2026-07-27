@@ -43,8 +43,8 @@
 20260725_book_librarian/
   data/
     output_data/           # ジャンクション → 元プロジェクトのoutput_data （読み取り専用）
-    蔵書リスト.csv           # ハードリンク → 元プロジェクトのCSV （読み取り専用）
-    topic_taxonomy.json    # トピック分類表（約25項目）★ユーザーが手編集する・git管理対象
+    蔵書リスト.csv           # build.js実行のたびに元プロジェクトのCSVから自動コピーされるキャッシュ（読み取り専用）
+    topic_taxonomy.json    # トピック分類表（可変・2026-07-27時点で40項目）★ユーザーが手編集する・git管理対象
     topic_overrides.json   # keyword→topicの例外指定 ★ユーザーが手編集する・git管理対象
     topic_mapping.json     # keyword→topic対応表（約8,780件）自動生成物・.gitignore対象
     db/

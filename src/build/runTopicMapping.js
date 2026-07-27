@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 // 全キーワードのkeyword→topic対応表を生成する。
-// 使い方: node src/build/runTopicMapping.js
-// 中断した場合、data/topic_mapping.jsonに既にある語はスキップして再開する。
+// 使い方:
+//   node src/build/runTopicMapping.js          中断した場合、data/topic_mapping.jsonに
+//                                               既にある語はスキップして再開する
+//   node src/build/runTopicMapping.js --full   既存の対応表を無視し、全キーワードを
+//                                               現在のtopic_taxonomy.jsonで再分類する
+//                                               （taxonomy自体を変更した直後に使う。
+//                                               既存の対応表の値は古いtaxonomy基準のため
+//                                               引き継げない）
 process.loadEnvFile('.env');
 
 import path from 'node:path';
@@ -15,9 +21,12 @@ import { resolveDbPath } from '../cli/dbPath.js';
 const TAXONOMY_PATH = path.resolve('data/topic_taxonomy.json');
 const MAPPING_PATH = path.resolve('data/topic_mapping.json');
 const BATCH_SIZE = 150;
+const forceFull = process.argv.includes('--full');
 
 const taxonomy = JSON.parse(fs.readFileSync(TAXONOMY_PATH, 'utf8'));
-const existingMapping = fs.existsSync(MAPPING_PATH) ? JSON.parse(fs.readFileSync(MAPPING_PATH, 'utf8')) : {};
+const existingMapping =
+  !forceFull && fs.existsSync(MAPPING_PATH) ? JSON.parse(fs.readFileSync(MAPPING_PATH, 'utf8')) : {};
+if (forceFull) console.log('--full指定: 既存の対応表を無視し、全キーワードを再分類します');
 
 const db = new Database(resolveDbPath(), { readonly: true });
 const keywords = collectKeywordFrequencies(db).map((r) => r.keyword);

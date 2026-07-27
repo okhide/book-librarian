@@ -22,7 +22,7 @@ v1.0.0リリース済み。`doc/06_implementation_plan.md`の実装計画（Phas
 ## データについて
 
 - `data/output_data/` は元プロジェクト（`C:\Users\okada\src\20260702_summarize_book_with_gemini\output_data`）へのディレクトリジャンクションです。**読み取り専用**として扱ってください（書き込み・削除しない）。
-- `data/蔵書リスト.csv` は同プロジェクトのCSVへのハードリンクです。同じく読み取り専用。
+- `data/蔵書リスト.csv` は元プロジェクトの同名CSV（読み取り専用）の**キャッシュ**です。元プロジェクト側は都度ファイルを削除→新規作成するため、ハードリンク/シンボリックリンクでは実体の入れ替わりで簡単にリンク切れになる。そのため`node src/build/build.js`実行のたびに`src/build/csvSource.js`が元CSVから上書きコピーして最新化する（`LIBRARIAN_CSV_SOURCE_PATH`環境変数で取得元パスを変更可）。手動編集・削除しないこと。
 - 元プロジェクトのコード（index.js/lib/gui等）はこのプロジェクトでは**再利用しません**。一から実装しています。
 - `data/db/library.db` はこのプロジェクトが生成するSQLiteデータベースです（`node src/build/build.js`で生成済み。`.gitignore`対象のためGitHub上には存在しない）。
 

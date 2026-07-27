@@ -84,7 +84,7 @@ node src/cli/search.js "<検索語>" [オプション]
 | `--limit N` | 返す件数（既定20） |
 | `--year Y` | 出版年で絞り込み |
 | `--category C` | `category_raw`（元データの自由記述カテゴリ、表記ゆれ大）で絞り込み |
-| `--topic T` | 正規化トピック（`topics`コマンドで一覧を確認できる、25種類）で絞り込み |
+| `--topic T` | 正規化トピック（`topics`コマンドで件数・一覧を確認できる。本の増加に伴い随時再分類されるため件数は固定ではない）で絞り込み |
 | `--level L` | 読者レベル（`beginner`/`intermediate`/`advanced`）で絞り込み |
 | `--unread` | 未読の本のみに絞り込み（`reading_status`が無い、または`unread`の本） |
 | `--with-summary` | 複数冊の`summaryShort`をまとめて取得（横断統合回答用。既定件数200） |
@@ -124,8 +124,9 @@ node src/cli/similar.js <id> [--limit N] [--json]
 node src/cli/topics.js [--json]
 ```
 
-25種類の正規化トピックと蔵書数を返す。`search --topic`で使える値の一覧でもあり、
-ユーザーへの絞り込み提案の材料になる。
+正規化トピックと蔵書数を返す（件数は本の増加や再分類で変動するため、常にこのコマンドで
+最新の一覧を取得すること。決め打ちの数値を覚えて使い回さない）。`search --topic`で使える
+値の一覧でもあり、ユーザーへの絞り込み提案の材料になる。
 
 ### `stats` — 蔵書全体の統計・自動クラスタリング
 

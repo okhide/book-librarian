@@ -64,7 +64,7 @@ Claude Codeの「司書スキル」（.claude/skills/book-librarian/SKILL.md）
 
 ### 2.7 トピック分類とreader_levelの二層設計
 
-- **トピック分類**: `topic_taxonomy.json`（約25種類、人が決めてGit管理）＋`topic_mapping.json`（キーワード→トピックの対応表、Gemini APIで機械生成、Git管理外）＋`topic_overrides.json`（例外、人が編集、Git管理）の3つを組み合わせ、そのハッシュ値を`topic_dict_version`として各本に記録する。辞書が更新されたことを検知して再分類が必要な本を判定できる。
+- **トピック分類**: `topic_taxonomy.json`（人が決めてGit管理。件数は固定ではなく、蔵書の増加に応じて`runTaxonomyDraft.js`で草案を作り直し、承認した上で全面差し替えることがある。2026-07-27時点で40種類）＋`topic_mapping.json`（キーワード→トピックの対応表、Gemini APIで機械生成、Git管理外。taxonomyを差し替えた際は`runTopicMapping.js --full`で全キーワードを再分類する必要がある）＋`topic_overrides.json`（例外、人が編集、Git管理）の3つを組み合わせ、そのハッシュ値を`topic_dict_version`として各本に記録する。辞書が更新されたことを検知して再分類が必要な本を判定できる。
 - **reader_level（読者レベル）**: まずルールベース（キーワードでの単純判定）で分類し、判定できなかった本だけをLLM（Gemini）で補完する。コストと精度のバランスを取るハイブリッド方式。
 
 ### 2.8 LLM出力とのID対応づけで学んだこと

@@ -45,7 +45,7 @@ node --test test/          # 全テスト実行
 
 ### テストデータの方針
 
-**`data/output_data` と `data/蔵書リスト.csv` には絶対に書き込まない**（読み取り専用のジャンクション／ハードリンク）。テストは以下を使う。
+**`data/output_data` と `data/蔵書リスト.csv` にはテストから絶対に書き込まない**（`data/output_data`は読み取り専用のジャンクション。`data/蔵書リスト.csv`は元プロジェクトCSVのキャッシュで、`node src/build/build.js`実行時にのみ`src/build/csvSource.js`が自動上書きする＝これはテストではなく本番動作なので対象外）。テストは以下を使う。
 
 - **`test/fixtures/output_data/`** — 自作の少数（10件程度）のMarkdownファイル。以下のエッジケースを意図的に含める。
   - ファイル名に `[` `]` を含むもの（実データに56件あるため必須）
@@ -577,6 +577,45 @@ Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26
 
 ---
 
+## Phase 9: ISBN・NDC分類の外部API補完
+
+**ゴール**: `doc/05_backlog.md`「データ拡充」項目。既存の`enriched_isbn`/`enriched_ndc`/`enriched_source`列を実際に使い、蔵書のISBN・NDC（日本十進分類法）を外部APIで補完する。
+
+ユーザーからの要求（2026-07-26）: 実装前に小さなプログラムで確度を実測すること。目標は「見つからない／複数候補のまま」の合計が全体の3%以下（後に「ISBN確定率」の基準として再定義。NDC充足率自体は別枠の参考値とする）。複数候補・未発見の本は自動判断せず、レビューキューに溜めて後でユーザーがまとめて確認する。
+
+### Step 9.0 spike: データソースの選定と精度実測 ✅完了（2026-07-26）
+
+`spike/s12_isbn_ndc_lookup.mjs`で実測。
+
+- **openBDは不採用**: NDCフィールド（`hanmoto.ndc9`）はほぼ空（実測: NDLでNDC欠落だった38件中、openBDで補完できたのは0件）。
+- **CiNii Booksは不採用**: APIキー（appid）の事前登録が必須な上、レスポンスにNDCコード自体が含まれない。
+- **NDLサーチ SRU API（`recordSchema=dcndl`）を主軸に採用**: 無料・キー不要。ISBN検索でヒットすればNDCがほぼ確実に付与されている。同一著作の別書誌（オーディオブック・点字版等）が複数ヒットする主因になるため、`materialType=Book`優先→著者一致→NDC値の互換判定（大分類が同じなら精度違いとみなす）の順で絞り込む設計にした。
+- **Google Books APIはオプションの補完ソースとして採用（既定ON）**: ISBN確認専用（NDCは提供しない）。NDLで見つからない場合のみ追加照会する。実測（NDLのnot_found40件中）で拾えたのは1件のみと効果は限定的だが、無いよりはましなレベルとして採用。
+- タイトル前処理（巻数表記・宣伝括弧の除去、副題の短縮）を`src/lib/titleNormalize.js`として実装し、実データで検証済みの具体例（「銃・病原菌・鉄 下巻...」「〈新版〉日本語の作文技術」等）で改善を確認した。
+- 実測での最終結果（グループA=isbn既知46%/グループB=isbn不明54%）: グループA失敗率0%、グループB失敗率約15〜20%（サンプルにより変動）。グループBの`not_found`の大半は自費出版Kindle本・雑誌の個別号で、NDCが図書館カタログ由来の分類である以上、構造的に埋まらない枠だと判断した。
+
+### Step 9.1〜9.6 本実装 ✅完了（2026-07-26）
+
+- `src/lib/ndl.js`: NDLサーチクライアント（fetch関数を注入可能。自動テストでは実サービスを呼ばない）
+- `src/lib/googleBooks.js`: Google Books補完クライアント（`ENRICHMENT_GOOGLE_BOOKS_ENABLED`で有効/無効を切り替え可能、既定は`GOOGLE_BOOKS_API_KEY`があればON）
+- `src/lib/schema.js`: `books.enrichment_status`列、`enrichment_candidates`テーブル（`reading_status`と同様`file_path`をキーにする。理由はStep 9.2の気づき参照）
+- `src/build/isbnNdcEnrichment.js`: 1冊分の解決（`enrichBook`）と`enrichment_status IS NULL`の本のみを対象にした一括処理（`enrichPendingBooks`、中断・再開可能、`limit`オプション対応）
+- `src/build/runIsbnNdcEnrichment.js`: 単独実行用ランナー
+- **`build.js`に統合**: ユーザーから「本の追加/更新」「キーワード等の再設定」「APIでの収集」を一気通貫でできるようにという要望があり、ISBN/NDC補完を`build.js`実行時に自動で走るよう組み込んだ（範囲確認の結果、既存のtopic分類・reader_level補完スクリプトは今回は統合対象外とし、別途の改善項目とした）
+- `src/build/persist.js`: `updateBook`で`isbn`/`title`が変わった本は、古い補完結果を無効化し再補完の対象に戻す（本の更新に追従するため）
+- `src/lib/enrichmentReview.js` + `src/cli/enrich.js`: レビューキューCLI（`review`/`resolve`/`skip`）
+- `src/build/csvSource.js`: end-to-end検証中に発覚した`data/蔵書リスト.csv`のハードリンク破断（Step 9.7の気づき参照）を受けて追加。`build.js`実行のたびに元プロジェクトのCSVを上書きコピーし、常に最新版を使うようにした
+
+### 実装中の気づきと決定（本Phase固有）
+
+| 日付 | 気づき | 判断 |
+|---|---|---|
+| 2026-07-26 | `isbn`列に真のNULLではなく文字列`"null"`が入っている本が59冊（2.3%）ある。元データ（`data/output_data`）自体に`isbn: "null"`という記述があるのが原因（`series: null`という真のYAML nullとは異なる）。 | 本機能では「isbn不明」として扱えば実害はない（対処済み）。別件の既存データ不整合として報告のみ。 |
+| 2026-07-26 | `books.id`はフルリビルドで再採番されうる（`DELETE FROM books`→再挿入、AUTOINCREMENT無し）。当初`enrichment_candidates.book_id INTEGER REFERENCES books(id)`として提案したが、これは`reading_status`が`file_path`をキーにしている設計方針と矛盾すると実装直前に気づいた。 | `enrichment_candidates`も`file_path`をキーに変更してユーザー確認・承認済み。 |
+| 2026-07-26 | 本番`data/db/library.db`に対して新機能を初めて実行したところ`no such column: enrichment_status`で失敗。`initSchema`の`CREATE TABLE IF NOT EXISTS`は新規テーブルにしか効かず、既存テーブルへの列追加には効かないため。過去のカラム追加（`reader_level`等）がどう反映されたか不明だが、このプロジェクトには元々スキーマのマイグレーション機構が存在しなかったことが判明した。 | `src/lib/schema.js`の`initSchema`に、追加専用の最小限マイグレーション（`PRAGMA table_info`で列の有無を確認し無ければ`ALTER TABLE ADD COLUMN`）を実装。既存データ（`reading_status`含む）を壊さないことをテストで確認。汎用マイグレーション基盤は今回のスコープでは作らず、必要になった列だけを対象にする素朴な実装に留めた。 |
+| 2026-07-26 | `build.js`が`.env`を読み込んでいなかった（既存のtopic分類・reader_levelルールがAPIキー不要だったため今まで問題にならなかった）。ISBN/NDC補完統合後、本番実行で`GOOGLE_BOOKS_API_KEY`が読めず「Google Books補完は無効」と誤判定された。 | `build.js`冒頭に`process.loadEnvFile?.('.env')`を追加。既に2,528冊分処理が始まっていたバックグラウンド実行を一旦停止し、修正後に再実行した（処理済み本は`enrichment_status`により自動的にスキップされるため、やり直しコストは小さかった）。 |
+| 2026-07-27 | end-to-end検証（一括更新フローの確認）中、ユーザーの指摘で`data/蔵書リスト.csv`が元プロジェクトのCSVとinodeが異なる別実体（3日古い、2,528行のまま）になっていることが判明。元プロジェクトがCSVを「削除して新規作成」で更新するため、ハードリンクが実体入れ替え時点で切れていた。 | `src/build/csvSource.js`を追加し、`build.js`実行のたびに元CSVから上書きコピーする方式に変更（ユーザー承認済み）。取得元パスは`LIBRARIAN_CSV_SOURCE_PATH`で上書き可、元ファイル不在時は警告して既存内容のまま続行。実行して`data/蔵書リスト.csv`を最新化（2,528→2,588行）し、`npm run test:all`(402件)全パスを確認。 |
+
 ## ステップ一覧（進捗管理用）
 
 | Step | 内容                             | spike  | 状態   |
@@ -617,6 +656,15 @@ Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26
 | 8.2  | frontmatterビルダーとVault書き込み |      | ✅完了  |
 | 8.3  | CLIラッパー                       |      | ✅完了  |
 | 8.4  | 新規スキル定義とシナリオ試験       |      | ✅完了  |
+| 9.0  | spike: データソース選定と精度実測 | S12    | ✅完了  |
+| 9.1  | タイトル正規化ヘルパー            |        | ✅完了  |
+| 9.2  | NDLクライアント本実装             |        | ✅完了  |
+| 9.3  | Google Books補完クライアント      |        | ✅完了  |
+| 9.4  | スキーマ拡張（マイグレーション含む）⚠要ユーザー確認 |  | ✅完了  |
+| 9.5  | build統合バッチスクリプト         |        | ✅完了  |
+| 9.6  | レビューキューCLI                 |        | ✅完了  |
+| 9.7  | end-to-end検証中に発覚した蔵書リスト.csvハードリンク破断の修正（自動コピー方式へ） |  | ✅完了  |
+| 9.8  | topic_taxonomy.jsonの再生成・全面差し替え（25→40項目）とrunTopicMapping.js --fullの追加 |  | ✅完了  |
 
 ---
 
@@ -664,3 +712,5 @@ Phase 6はユーザーから具体的要求を得て詳細化した（2026-07-26
 | 2026-07-26 | 7.2  | spike S10で実データのクラスタリング結果を目視評価したところ、k=12以下は粒度が粗すぎ、k=25は一部（統計学・数学系）が過剰分割される傾向が見られた | 判断不要（報告のみ）。k=20を既定値として採用した |
 | 2026-07-26 | 8.0  | Obsidian書き出し機能はNotebookLM連携と異なり外部認証・APIが不要（ローカルファイル操作のみ）なため、SKILL.mdの指示のみで実装することも可能だった | ユーザー確認: このプロジェクトの一貫方針（ロジックのコード化＋自動試験）を優先し、「スキル＋小さなヘルパーコード」方式を採用。決定的な部分（Vaultパス解決・ファイル名生成・frontmatter整形・既存ノート一覧・書き込み）のみコード化し、本文構成やマージ判断はChat内でClaudeが行う設計にした |
 | 2026-07-26 | 8.1  | Step 8.1の回帰試験(`test:all`)実行中、`data/output_data`（元プロジェクトへのジャンクション）が2,527件→2,547件（+20件）に増えており、Phase 1〜3の結合試験に多数ハードコードされていた「2,527」等の絶対件数が軒並み不一致で失敗した（Phase 8とは無関係の既存試験）。さらに調査すると、単なる件数ドリフトとは別に(1) `data/topic_mapping.json`が新規20冊分のキーワード62語を未カバー、(2) `data/蔵書リスト.csv`（読み取り専用・上流管理）に新規20冊の行が無く該当本の`csv_serial`が未設定、という実データの中身自体の陳腐化も発見した | ユーザー確認: ①今後も蔵書は増減しうるため、結合試験の絶対件数はディレクトリの実スキャン件数と突き合わせる形に変更（`parse_corpus.test.js`他7ファイル）。内容依存の値（keyword総数等）は1冊あたりの比率による緩い妥当性チェックに変更。②`node src/build/runTopicMapping.js`を実行しGemini APIで62語を分類、`topic_mapping.json`を更新した（本番`data/db/library.db`はStep7時点で既に2,547件・topic_dict_version全件設定済みで健全だったため、DBの再ビルドは不要だった）。③「summarized本は必ずcsv_serialを持つ」という前提はCSVの反映タイムラグ上ありえないと判断し、「未設定5%未満なら許容」する試験に変更した。修正後`npm run test:all`は267件全てパス |
+| 2026-07-27 | 9.7  | Phase 9のend-to-end検証（新規追加本での一括更新フロー確認）中、ユーザーから「蔵書リストは2588件のはずでは」と指摘を受けて調査したところ、`data/蔵書リスト.csv`が元プロジェクトの実CSVとinodeが異なる別実体になっていた（更新日時が3日古く、行数も2,528行のまま）。原因は元プロジェクト側がCSVを「削除して新規作成」する方式で更新しているため、ハードリンクが実体入れ替え時点で切れていたこと。`data/output_data`と同様にディレクトリジャンクションで対処することは、単一ファイルには使えない（Windowsのjunctionはディレクトリ専用）ため不可 | ユーザー確認: リンク方式をやめ、`node src/build/build.js`実行の冒頭で毎回、元CSVから`data/蔵書リスト.csv`へ上書きコピーする方式に変更（`src/build/csvSource.js`、取得元パスは`LIBRARIAN_CSV_SOURCE_PATH`で上書き可、元ファイルが見つからない場合は警告して既存内容のまま続行）。CLAUDE.md・doc/03/04・.gitignoreの「ハードリンク」表記も実態に合わせて修正した。実行して`data/蔵書リスト.csv`を最新化(2,588行)し、`npm run test:all`(402件)全パスを確認 |
+| 2026-07-27 | 9.8  | ユーザーから「初期は自動でジャンル25種類が決まったが、今後も蔵書増加に応じてジャンル一覧自体を自動更新できるか」と質問された。`runTaxonomyDraft.js`（Step3.2で使った草案生成スクリプト）は当時のまま残っており再実行可能だが、`runTopicMapping.js`は既存対応表のキー（キーワード）に無い語だけを追記する差分更新のみで、taxonomy自体を差し替えた場合に古い対応表の値（旧トピック名）を捨てて全件を新taxonomy基準で再分類する手段が無かった | ユーザー確認: 現蔵書(2,587冊)で`runTaxonomyDraft.js`を再実行→40項目の草案を提示し、内容の差分（据え置き/改名/分割/新設ジャンル）を説明した上でユーザーが採用を決定。`runTopicMapping.js`に`--full`オプションを追加（既存対応表を無視し全キーワードを現在のtaxonomyで再分類、60バッチ・8,984語）し、`build.js`で全2,587冊に反映。ドキュメント（doc/03/04/07/08、SKILL.md×2）の「25種類」というハードコードされた件数表記は、SKILL.mdは動的に`topics`コマンドで確認する案内に変更し、人間向けドキュメントは「2026-07-27時点でN種類・件数は可変」という書き方に統一した。`npm run test:all`(402件)全パスを確認 |

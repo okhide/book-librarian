@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS books (
   enriched_isbn TEXT,
   enriched_ndc TEXT,
   enriched_source TEXT,
+  enrichment_status TEXT,                -- NULL(未着手) | 'matched' | 'not_found' | 'needs_review' | 'skipped'(人間がレビュー対象外と判断)
   updated_at TEXT NOT NULL
 );
 
@@ -72,11 +73,37 @@ CREATE TABLE IF NOT EXISTS reading_status (
   note TEXT,
   updated_at TEXT NOT NULL
 );
+
+-- ISBN/NDC補完で「見つからない」「複数候補のまま」だった本を、後でまとめて人間がレビューできるよう保持する。
+-- books.idはフルリビルドで再採番されうるため、reading_statusと同様にfile_pathをキーにする。
+CREATE TABLE IF NOT EXISTS enrichment_candidates (
+  file_path TEXT PRIMARY KEY REFERENCES books(file_path),
+  status TEXT NOT NULL,          -- 'not_found' | 'needs_review'
+  source TEXT,                   -- 'ndl_isbn' | 'ndl_title' | 'ndl_title_fallback'
+  candidate_count INTEGER,
+  conflicting_ndc TEXT,          -- JSON配列（needs_reviewの場合のみ）
+  created_at TEXT NOT NULL
+);
 `;
 
-/** DBに全テーブル・インデックスを作成する（既存なら何もしない）。 */
+// CREATE TABLE IF NOT EXISTSは新規テーブルにしか効かず、既存テーブルへの列追加は反映されない。
+// このプロジェクトには汎用マイグレーション機構が無いため、追加専用の列だけを対象にした
+// 最小限のマイグレーションをここに素朴に書く（ALTER TABLE ADD COLUMNは既存データを壊さない）。
+const COLUMN_MIGRATIONS = [{ table: 'books', column: 'enrichment_status', ddl: 'TEXT' }];
+
+function migrateMissingColumns(db) {
+  for (const { table, column, ddl } of COLUMN_MIGRATIONS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!columns.includes(column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    }
+  }
+}
+
+/** DBに全テーブル・インデックスを作成する（既存なら何もしない）。既存テーブルへの列追加もここで行う。 */
 export function initSchema(db) {
   db.exec(SCHEMA_SQL);
+  migrateMissingColumns(db);
 }
 
 /** フルリビルド対象の導出データテーブル一覧（reading_statusは含まない）。 */

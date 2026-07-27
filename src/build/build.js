@@ -3,6 +3,7 @@
 // 使い方:
 //   node src/build/build.js          初回は自動でフルビルド、2回目以降は差分更新
 //   node src/build/build.js --full   常にフルリビルド（reading_statusは保護される）
+process.loadEnvFile?.('.env'); // Google Books補完（GOOGLE_BOOKS_API_KEY）等で使用
 import path from 'node:path';
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
@@ -15,8 +16,11 @@ import { createEmbedder } from '../lib/embed.js';
 import { generateMissingEmbeddings } from './embedBuild.js';
 import { applyTopicsToAllBooks } from './applyTopics.js';
 import { applyReaderLevelRules } from './readerLevel.js';
+import { enrichPendingBooks } from './isbnNdcEnrichment.js';
+import { isGoogleBooksEnabled } from '../lib/googleBooks.js';
 import { findOrphanedReadingStatus } from '../lib/readingStatus.js';
 import { resolveDbPath } from '../cli/dbPath.js';
+import { resolveCsvSourcePath, refreshCatalogCsv } from './csvSource.js';
 
 const DB_PATH = resolveDbPath();
 const OUTPUT_DATA_DIR = path.resolve('data/output_data');
@@ -25,6 +29,14 @@ const TAXONOMY_PATH = path.resolve('data/topic_taxonomy.json');
 const MAPPING_PATH = path.resolve('data/topic_mapping.json');
 const OVERRIDES_PATH = path.resolve('data/topic_overrides.json');
 const forceFullRebuild = process.argv.includes('--full');
+
+const csvRefresh = refreshCatalogCsv(resolveCsvSourcePath(), CSV_PATH);
+if (csvRefresh.copied) {
+  console.log('蔵書リスト.csvを元プロジェクトの最新版に同期しました');
+} else {
+  console.log(`⚠ ${csvRefresh.warning}`);
+  console.log('  → data/蔵書リスト.csvは更新されず、既存の内容のまま処理を続行します。');
+}
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new Database(DB_PATH);
@@ -100,6 +112,20 @@ const { generated, total } = await generateMissingEmbeddings(db, extractor);
 console.log(
   `埋め込み生成: ${generated}/${total}件 (${Date.now() - embedGenStart}ms)`
 );
+
+const useGoogleBooks = isGoogleBooksEnabled();
+console.log(`\nISBN・NDC補完を実行します（NDLサーチ${useGoogleBooks ? '＋Google Books補完' : '。Google Books補完は無効'}）...`);
+const enrichStart = Date.now();
+const enrichSummary = await enrichPendingBooks(db, { useGoogleBooks, delayMs: 250 });
+console.log(
+  `ISBN・NDC補完: 対象${enrichSummary.total}件中 matched=${enrichSummary.matched} not_found=${enrichSummary.notFound} ` +
+    `needs_review=${enrichSummary.needsReview} (${Date.now() - enrichStart}ms)`
+);
+if (enrichSummary.notFound + enrichSummary.needsReview > 0) {
+  console.log(
+    `  → ${enrichSummary.notFound + enrichSummary.needsReview}件がレビュー待ちです。node src/cli/enrich.js review で確認できます。`
+  );
+}
 
 const orphaned = findOrphanedReadingStatus(db);
 if (orphaned.length > 0) {

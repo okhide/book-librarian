@@ -5,7 +5,8 @@ node_modules/
 # APIキー等の秘密情報
 .env
 
-# data/output_data と 蔵書リスト.csv は元プロジェクトへのジャンクション/ハードリンク（読み取り専用）
+# data/output_dataは元プロジェクトへのジャンクション、蔵書リスト.csvはbuild.js実行時に
+# 元プロジェクトのCSVから自動コピーされるキャッシュ（いずれも読み取り専用のローカル実体）
 data/output_data/
 data/蔵書リスト.csv
 
@@ -13,6 +14,7 @@ data/蔵書リスト.csv
 data/db/
 data/models/
 data/topic_mapping.json
+data/topic_taxonomy.draft.json
 
 # data/topic_taxonomy.json と data/topic_overrides.json はユーザーが手編集する資産のため
 # 上記の除外対象にせず、git管理対象とする（doc/04_design.md参照）

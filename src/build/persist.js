@@ -107,6 +107,19 @@ export function insertBook(db, { filePath, fileMtime, contentHash, parsed }) {
  * 関連テーブル(book_keywords/book_topics/book_embeddings)の旧行を削除して再挿入し、
  * search_text/embed_source_hashを再合成する（doc/03_specification.md「差分更新の要件」参照）。
  */
+// isbn・titleはISBN/NDC補完のキーとなる項目。変わった場合は過去の補完結果が
+// 別の本を指す可能性があるため、補完済みデータを無効化し再補完の対象に戻す。
+function resetEnrichmentIfIdentityChanged(db, bookId, newIsbn, newTitle) {
+  const current = db.prepare('SELECT isbn, title FROM books WHERE id = ?').get(bookId);
+  if (current && (current.isbn !== newIsbn || current.title !== newTitle)) {
+    db.prepare(
+      'UPDATE books SET enriched_isbn = NULL, enriched_ndc = NULL, enriched_source = NULL, enrichment_status = NULL WHERE id = ?'
+    ).run(bookId);
+    const filePath = db.prepare('SELECT file_path FROM books WHERE id = ?').get(bookId)?.file_path;
+    if (filePath) db.prepare('DELETE FROM enrichment_candidates WHERE file_path = ?').run(filePath);
+  }
+}
+
 export function updateBook(db, bookId, { filePath, fileMtime, contentHash, parsed }) {
   const now = new Date().toISOString();
   const p = toBookParams(parsed);
@@ -127,11 +140,89 @@ export function updateBook(db, bookId, { filePath, fileMtime, contentHash, parse
 
   const run = db.transaction(() => {
     deleteEmbeddingIfSourceChanged(db, bookId, p.embedSourceHash);
+    resetEnrichmentIfIdentityChanged(db, bookId, p.isbn, p.title);
     stmt.run({ bookId, filePath, fileMtime, contentHash, ...p, updatedAt: now });
     deleteChildRows(db, bookId);
     insertKeywords(db, bookId, parsed.keywords);
   });
   run();
+}
+
+const EDITABLE_FIELD_TO_COLUMN = {
+  title: 'title',
+  author: 'author',
+  publisher: 'publisher',
+  series: 'series',
+  edition: 'edition',
+  isbn: 'isbn',
+  publicationDate: 'publication_date',
+  publicationYear: 'publication_year',
+  categoryRaw: 'category_raw',
+  reliability: 'reliability',
+  driveUrl: 'drive_url',
+  summaryLong: 'summary_long',
+  summaryShort: 'summary_short',
+  readerLevel: 'reader_level',
+};
+
+/**
+ * viewerの編集モードから、書誌情報・要約・読者レベルなど「手編集しても壊れない」列だけを更新する。
+ * file_path/status/各種ハッシュ・csv_*・keywords/topics・ISBN/NDC補完結果には触れない
+ * （導出データ・キー情報のため。doc/07_user_manual.md「viewerの編集モード」参照）。
+ * search_text/embed_source_hashは編集後の内容から再合成し、isbn/titleが変わった場合は
+ * updateBook同様にISBN/NDC補完結果を無効化する。
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} bookId
+ * @param {Partial<Record<keyof typeof EDITABLE_FIELD_TO_COLUMN, string|number|null>>} fields キーはEDITABLE_FIELD_TO_COLUMNのキーと同じ（camelCase）
+ * @returns {object} 更新後のbooks行
+ */
+export function updateBookEditableFields(db, bookId, fields) {
+  const current = db.prepare('SELECT * FROM books WHERE id = ?').get(bookId);
+  if (!current) throw new Error(`id=${bookId} の本が見つかりません`);
+
+  const merged = { ...current };
+  for (const [field, column] of Object.entries(EDITABLE_FIELD_TO_COLUMN)) {
+    if (field in fields) merged[column] = fields[field];
+  }
+
+  const keywords = getKeywordsForBook(db, bookId);
+  const topics = getTopicsForBook(db, bookId);
+  const searchText = buildSearchText({
+    title: merged.title,
+    author: merged.author,
+    keywords,
+    topics,
+    summaryLong: merged.summary_long,
+    summaryShort: merged.summary_short,
+  });
+  const embedSourceText = buildEmbedSourceText({
+    title: merged.title,
+    author: merged.author,
+    keywords,
+    topics,
+    summaryLong: merged.summary_long,
+  });
+  const embedSourceHash = sha256(embedSourceText);
+  const now = new Date().toISOString();
+
+  const run = db.transaction(() => {
+    deleteEmbeddingIfSourceChanged(db, bookId, embedSourceHash);
+    resetEnrichmentIfIdentityChanged(db, bookId, merged.isbn, merged.title);
+    db.prepare(
+      `UPDATE books SET
+         title = @title, author = @author, publisher = @publisher, series = @series,
+         edition = @edition, isbn = @isbn, publication_date = @publication_date,
+         publication_year = @publication_year, category_raw = @category_raw,
+         reliability = @reliability, drive_url = @drive_url,
+         summary_long = @summary_long, summary_short = @summary_short,
+         reader_level = @reader_level, search_text = @search_text,
+         embed_source_hash = @embed_source_hash, updated_at = @updated_at
+       WHERE id = @id`
+    ).run({ ...merged, search_text: searchText, embed_source_hash: embedSourceHash, updated_at: now });
+  });
+  run();
+
+  return db.prepare('SELECT * FROM books WHERE id = ?').get(bookId);
 }
 
 /** file_mtimeだけを更新する（内容が変わっていない場合。再パース・埋め込み再生成は行わない）。 */
